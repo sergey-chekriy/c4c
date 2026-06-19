@@ -4,7 +4,7 @@
 
 Goal: parse Structurizr-style C4 architecture-as-code, validate it locally, and export static artifacts without SaaS, remote rendering, accounts, or telemetry.
 
-## Milestone 1 scope
+## Current scope
 
 Implemented in this repo:
 
@@ -109,7 +109,7 @@ workspace.dsl
   -> exporters
 ```
 
-The current parser is intentionally small and dependency-free. Later milestones should replace or harden it with a formal grammar and better diagnostics.
+The compiler now has a span-aware lexer/parser, source diagnostics, semantic validation, and core workspace/model grammar support. Full view grammar, styles, preprocessing, documentation rendering, and additional exporters are planned in later milestones.
 
 ## Offline/security policy
 
