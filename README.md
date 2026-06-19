@@ -25,7 +25,8 @@ Implemented in this repo:
 - Semantic validation for duplicate identifiers, relationship endpoints, parent hierarchy, and view scope types.
 - Mermaid export for supported views.
 
-Not implemented yet: the full Structurizr DSL. See `CODEX_INSTRUCTIONS.md` for the roadmap.
+
+Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
 
 ## Build
 
