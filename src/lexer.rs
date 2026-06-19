@@ -11,9 +11,16 @@ pub enum TokenKind {
     LeftBrace,
     RightBrace,
     Equals,
+    DoubleEquals,
+    NotEquals,
+    And,
+    Or,
+    LeftParen,
+    RightParen,
     Arrow,
     RemoveArrow,
     Star,
+    ReluctantStar,
     Newline,
     Eof,
 }
@@ -70,7 +77,29 @@ impl Lexer<'_> {
                 }
                 '{' => self.single(TokenKind::LeftBrace, start),
                 '}' => self.single(TokenKind::RightBrace, start),
+                '=' if self.rest().starts_with("==") => {
+                    self.offset += 2;
+                    self.push(TokenKind::DoubleEquals, start, self.offset);
+                }
                 '=' => self.single(TokenKind::Equals, start),
+                '!' if self.rest().starts_with("!=") => {
+                    self.offset += 2;
+                    self.push(TokenKind::NotEquals, start, self.offset);
+                }
+                '&' if self.rest().starts_with("&&") => {
+                    self.offset += 2;
+                    self.push(TokenKind::And, start, self.offset);
+                }
+                '|' if self.rest().starts_with("||") => {
+                    self.offset += 2;
+                    self.push(TokenKind::Or, start, self.offset);
+                }
+                '(' => self.single(TokenKind::LeftParen, start),
+                ')' => self.single(TokenKind::RightParen, start),
+                '*' if self.rest().starts_with("*?") => {
+                    self.offset += 2;
+                    self.push(TokenKind::ReluctantStar, start, self.offset);
+                }
                 '*' => self.single(TokenKind::Star, start),
                 '"' => {
                     if !self.string(start) {
@@ -175,6 +204,8 @@ impl Lexer<'_> {
             if !matches!(previous.kind, TokenKind::Newline)
                 && !matches!(kind, TokenKind::Newline)
                 && previous.span.end == start
+                && !expression_token(&previous.kind)
+                && !expression_token(&kind)
             {
                 self.diagnostics.push(
                     Diagnostic::error(
@@ -211,5 +242,17 @@ impl Lexer<'_> {
 }
 
 fn is_identifier(character: char) -> bool {
-    character.is_alphanumeric() || matches!(character, '_' | '-' | '.' | '/' | ':')
+    character.is_alphanumeric() || matches!(character, '_' | '-' | '.' | '/' | ':' | ',')
+}
+
+fn expression_token(kind: &TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::DoubleEquals
+            | TokenKind::NotEquals
+            | TokenKind::And
+            | TokenKind::Or
+            | TokenKind::LeftParen
+            | TokenKind::RightParen
+    )
 }

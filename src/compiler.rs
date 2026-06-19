@@ -21,6 +21,7 @@ pub struct Workspace {
     pub extension: Option<WorkspaceExtension>,
     pub attributes: Vec<Property>,
     pub properties: Vec<Property>,
+    pub view_properties: Vec<Property>,
     pub directives: Vec<Directive>,
     pub preserved: Vec<PreservedBlock>,
     pub groups: Vec<Group>,
@@ -45,6 +46,7 @@ impl Workspace {
             extension: None,
             attributes: Vec::new(),
             properties: Vec::new(),
+            view_properties: Vec::new(),
             directives: Vec::new(),
             preserved: Vec::new(),
             groups: Vec::new(),
@@ -122,19 +124,86 @@ pub struct View {
     pub scope: Option<String>,
     pub key: Option<String>,
     pub description: Option<String>,
-    pub includes: Vec<String>,
-    pub excludes: Vec<String>,
-    pub auto_layout: Option<String>,
+    pub includes: Vec<ViewSelector>,
+    pub excludes: Vec<ViewSelector>,
+    pub auto_layout: Option<AutoLayout>,
     pub title: Option<String>,
+    pub is_default: bool,
+    pub animations: Vec<AnimationStep>,
+    pub properties: Vec<Property>,
+    pub filter: Option<ViewFilter>,
+    pub environment: Option<Reference>,
+    pub dynamic_relationships: Vec<DynamicRelationship>,
+    pub image_sources: Vec<ImageSource>,
     pub order: usize,
     pub span: Span,
     pub scope_span: Option<Span>,
+    pub key_span: Option<Span>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ViewKind {
+    SystemLandscape,
     SystemContext,
     Container,
+    Component,
+    Filtered,
+    Dynamic,
+    Deployment,
+    Custom,
+    Image,
+}
+
+#[derive(Debug, Clone)]
+pub struct ViewSelector {
+    pub value: String,
+    pub span: Span,
+    pub expression: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct AutoLayout {
+    pub direction: String,
+    pub rank_separation: Option<String>,
+    pub node_separation: Option<String>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct AnimationStep {
+    pub elements: Vec<Reference>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum FilterMode {
+    Include,
+    Exclude,
+}
+
+#[derive(Debug, Clone)]
+pub struct ViewFilter {
+    pub base_key: Reference,
+    pub mode: FilterMode,
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DynamicRelationship {
+    pub sequence: Option<String>,
+    pub source: Option<Reference>,
+    pub destination: Option<Reference>,
+    pub relationship: Option<Reference>,
+    pub description: Option<String>,
+    pub technology: Option<String>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImageSource {
+    pub kind: String,
+    pub arguments: Vec<String>,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -354,6 +423,7 @@ fn merge_workspaces(mut base: Workspace, mut derived: Workspace, sources: Source
     base.views.extend(derived.views);
     base.attributes.extend(derived.attributes);
     base.properties.extend(derived.properties);
+    base.view_properties.extend(derived.view_properties);
     base.directives.extend(derived.directives);
     base.preserved.extend(derived.preserved);
     base.groups.extend(derived.groups);
@@ -454,8 +524,26 @@ pub fn validate(workspace: &Workspace) -> Result<(), String> {
             );
         }
     }
+    let mut view_keys = HashMap::new();
     for view in &workspace.views {
+        validate_property_spans(&view.properties);
+        if let Some(key) = &view.key {
+            if let Some(original) = view_keys.insert(key.as_str(), view) {
+                diagnostics.push(
+                    Diagnostic::error(
+                        view.key_span.unwrap_or(view.span),
+                        format!("duplicate view key '{key}'"),
+                    )
+                    .with_help(format!(
+                        "rename this view; the key was first used by a {:?} view",
+                        original.kind
+                    )),
+                );
+            }
+        }
+        validate_view_options(workspace, view, &mut diagnostics);
         match view.kind {
+            ViewKind::SystemLandscape => {}
             ViewKind::SystemContext => require_kind(
                 workspace,
                 view,
@@ -470,12 +558,290 @@ pub fn validate(workspace: &Workspace) -> Result<(), String> {
                 "container view",
                 &mut diagnostics,
             ),
+            ViewKind::Component => require_kind(
+                workspace,
+                view,
+                ElementKind::Container,
+                "component view",
+                &mut diagnostics,
+            ),
+            ViewKind::Filtered => validate_filtered_view(workspace, view, &mut diagnostics),
+            ViewKind::Dynamic => validate_dynamic_view(workspace, view, &mut diagnostics),
+            ViewKind::Deployment => validate_deployment_view(workspace, view, &mut diagnostics),
+            ViewKind::Custom => validate_custom_view(workspace, view, &mut diagnostics),
+            ViewKind::Image => validate_image_view(workspace, view, &mut diagnostics),
         }
     }
     if diagnostics.is_empty() {
         Ok(())
     } else {
         Err(render_all(&diagnostics, &workspace.source_map))
+    }
+}
+
+fn validate_view_options(workspace: &Workspace, view: &View, diagnostics: &mut Vec<Diagnostic>) {
+    if let Some(layout) = &view.auto_layout {
+        if !["tb", "bt", "lr", "rl"]
+            .iter()
+            .any(|direction| layout.direction.eq_ignore_ascii_case(direction))
+        {
+            diagnostics.push(
+                Diagnostic::error(
+                    layout.span,
+                    format!("invalid autoLayout direction '{}'", layout.direction),
+                )
+                .with_help("use tb, bt, lr, or rl"),
+            );
+        }
+    }
+    for selector in view.includes.iter().chain(&view.excludes) {
+        if selector.value == "*" || selector.value == "*?" {
+            continue;
+        }
+        if selector.expression {
+            if let Some((source, destination)) = relationship_pattern(&selector.value) {
+                for identifier in [source, destination] {
+                    if identifier != "*" && find(workspace, identifier).is_none() {
+                        diagnostics.push(Diagnostic::error(
+                            selector.span,
+                            format!("view relationship expression references undefined element '{identifier}'"),
+                        ));
+                    }
+                }
+            }
+            continue;
+        }
+        if find(workspace, &selector.value).is_none() {
+            diagnostics.push(
+                Diagnostic::error(
+                    selector.span,
+                    format!("view selector '{}' is not defined", selector.value),
+                )
+                .with_help("use an existing element identifier, wildcard, or supported expression"),
+            );
+        }
+    }
+    for step in &view.animations {
+        debug_assert!(step.span.end >= step.span.start);
+        for reference in &step.elements {
+            if find(workspace, &reference.identifier).is_none() {
+                diagnostics.push(Diagnostic::error(
+                    reference.span,
+                    format!(
+                        "animation element '{}' is not defined",
+                        reference.identifier
+                    ),
+                ));
+            }
+        }
+    }
+}
+
+fn validate_filtered_view(workspace: &Workspace, view: &View, diagnostics: &mut Vec<Diagnostic>) {
+    let Some(filter) = &view.filter else {
+        diagnostics.push(Diagnostic::error(
+            view.span,
+            "filtered view configuration is missing",
+        ));
+        return;
+    };
+    match workspace
+        .views
+        .iter()
+        .find(|candidate| candidate.key.as_deref() == Some(&filter.base_key.identifier))
+    {
+        Some(base)
+            if matches!(
+                base.kind,
+                ViewKind::SystemLandscape
+                    | ViewKind::SystemContext
+                    | ViewKind::Container
+                    | ViewKind::Component
+            ) => {}
+        Some(base) => diagnostics.push(
+            Diagnostic::error(
+                filter.base_key.span,
+                format!(
+                    "filtered view base '{}' has unsupported type {:?}",
+                    filter.base_key.identifier, base.kind
+                ),
+            )
+            .with_help("base a filtered view on a static view"),
+        ),
+        None => diagnostics.push(
+            Diagnostic::error(
+                filter.base_key.span,
+                format!(
+                    "filtered view base '{}' is not defined",
+                    filter.base_key.identifier
+                ),
+            )
+            .with_help("define a keyed static view before referencing it"),
+        ),
+    }
+}
+
+fn validate_dynamic_view(workspace: &Workspace, view: &View, diagnostics: &mut Vec<Diagnostic>) {
+    let scope = view.scope.as_deref();
+    if scope != Some("*") {
+        let target = scope.and_then(|identifier| find(workspace, identifier));
+        if !matches!(
+            target.map(|element| &element.kind),
+            Some(ElementKind::SoftwareSystem | ElementKind::Container)
+        ) {
+            diagnostics.push(
+                Diagnostic::error(
+                    view.scope_span.unwrap_or(view.span),
+                    "dynamic view scope must be '*', a software system, or a container",
+                )
+                .with_help("use a supported dynamic view scope"),
+            );
+        }
+    }
+    for instance in &view.dynamic_relationships {
+        if let Some(reference) = &instance.relationship {
+            diagnostics.push(
+                Diagnostic::error(
+                    reference.span,
+                    format!(
+                        "dynamic relationship identifier '{}' cannot be resolved",
+                        reference.identifier
+                    ),
+                )
+                .with_help(
+                    "relationship identifiers are not supported; use 'source -> destination'",
+                ),
+            );
+        }
+        for reference in [instance.source.as_ref(), instance.destination.as_ref()]
+            .into_iter()
+            .flatten()
+        {
+            match find(workspace, &reference.identifier) {
+                Some(element) if dynamic_element_allowed(workspace, scope, element) => {}
+                Some(_) => diagnostics.push(
+                    Diagnostic::error(
+                        reference.span,
+                        format!(
+                            "dynamic element '{}' is outside the view scope",
+                            reference.identifier
+                        ),
+                    )
+                    .with_help("use an element permitted by this dynamic view scope"),
+                ),
+                None => diagnostics.push(Diagnostic::error(
+                    reference.span,
+                    format!("dynamic element '{}' is not defined", reference.identifier),
+                )),
+            }
+        }
+        if let (Some(source), Some(destination)) = (&instance.source, &instance.destination) {
+            let endpoints_exist = find(workspace, &source.identifier).is_some()
+                && find(workspace, &destination.identifier).is_some();
+            if endpoints_exist
+                && !workspace.relationships.iter().any(|relationship| {
+                    relationship.source == source.identifier
+                        && relationship.destination == destination.identifier
+                })
+            {
+                diagnostics.push(
+                    Diagnostic::error(
+                        instance.span,
+                        format!(
+                            "dynamic relationship '{} -> {}' is not defined in the model",
+                            source.identifier, destination.identifier
+                        ),
+                    )
+                    .with_help("define the relationship in the model before using it dynamically"),
+                );
+            }
+        }
+    }
+}
+
+fn dynamic_element_allowed(workspace: &Workspace, scope: Option<&str>, element: &Element) -> bool {
+    match scope {
+        Some("*") => matches!(
+            element.kind,
+            ElementKind::Person | ElementKind::SoftwareSystem
+        ),
+        Some(scope) => match find(workspace, scope).map(|item| &item.kind) {
+            Some(ElementKind::SoftwareSystem) => {
+                matches!(
+                    element.kind,
+                    ElementKind::Person | ElementKind::SoftwareSystem
+                ) || (element.kind == ElementKind::Container
+                    && element.parent.as_deref() == Some(scope))
+            }
+            Some(ElementKind::Container) => {
+                matches!(
+                    element.kind,
+                    ElementKind::Person | ElementKind::SoftwareSystem
+                ) || (element.kind == ElementKind::Component
+                    && element.parent.as_deref() == Some(scope))
+                    || (element.kind == ElementKind::Container
+                        && software_system_of(workspace, &element.id)
+                            == software_system_of(workspace, scope))
+            }
+            _ => false,
+        },
+        None => false,
+    }
+}
+
+fn validate_deployment_view(workspace: &Workspace, view: &View, diagnostics: &mut Vec<Diagnostic>) {
+    if view.scope.as_deref() != Some("*") {
+        require_kind(
+            workspace,
+            view,
+            ElementKind::SoftwareSystem,
+            "deployment view",
+            diagnostics,
+        );
+    }
+    let valid_environment = view.environment.as_ref().and_then(|environment| {
+        workspace.elements.iter().find(|element| {
+            element.kind == ElementKind::DeploymentEnvironment
+                && (element.id == environment.identifier || element.name == environment.identifier)
+        })
+    });
+    if valid_environment.is_none() {
+        diagnostics.push(
+            Diagnostic::error(
+                view.environment
+                    .as_ref()
+                    .map_or(view.span, |item| item.span),
+                "deployment view environment is missing or undefined",
+            )
+            .with_help("use an existing deployment environment identifier or name"),
+        );
+    }
+}
+
+fn validate_custom_view(workspace: &Workspace, view: &View, diagnostics: &mut Vec<Diagnostic>) {
+    for selector in view.includes.iter().filter(|selector| !selector.expression) {
+        if let Some(element) = find(workspace, &selector.value) {
+            if element.kind != ElementKind::Generic {
+                diagnostics.push(
+                    Diagnostic::error(
+                        selector.span,
+                        "custom views may include only generic elements",
+                    )
+                    .with_help("use elements declared with the element keyword"),
+                );
+            }
+        }
+    }
+}
+
+fn validate_image_view(workspace: &Workspace, view: &View, diagnostics: &mut Vec<Diagnostic>) {
+    if let Some(scope) = view.scope.as_deref() {
+        if scope != "*" && find(workspace, scope).is_none() {
+            diagnostics.push(Diagnostic::error(
+                view.scope_span.unwrap_or(view.span),
+                format!("image view scope '{scope}' is not defined"),
+            ));
+        }
     }
 }
 
@@ -811,6 +1177,29 @@ pub fn inspect(workspace: &Workspace) -> String {
             view.kind, view.scope, view.key, view.description
         ));
     }
+    if !workspace.view_properties.is_empty() || workspace.views.iter().any(has_m4_view_data) {
+        output.push_str("m4 views:\n");
+        output.push_str(&format!(
+            "  properties={:?}\n",
+            property_pairs(&workspace.view_properties)
+        ));
+        for view in workspace.views.iter().filter(|view| has_m4_view_data(view)) {
+            output.push_str(&format!(
+                "  {:?} layout={:?} default={} animations={} properties={} dynamic={} images={}\n",
+                view.kind,
+                view.auto_layout.as_ref().map(|layout| (
+                    &layout.direction,
+                    &layout.rank_separation,
+                    &layout.node_separation
+                )),
+                view.is_default,
+                view.animations.len(),
+                view.properties.len(),
+                view.dynamic_relationships.len(),
+                view.image_sources.len()
+            ));
+        }
+    }
     if workspace.extension.is_some()
         || !workspace.properties.is_empty()
         || !workspace.directives.is_empty()
@@ -870,6 +1259,25 @@ pub fn inspect(workspace: &Workspace) -> String {
     output
 }
 
+fn has_m4_view_data(view: &View) -> bool {
+    !matches!(view.kind, ViewKind::SystemContext | ViewKind::Container)
+        || view.is_default
+        || !view.animations.is_empty()
+        || !view.properties.is_empty()
+        || view.filter.is_some()
+        || view.environment.is_some()
+        || !view.dynamic_relationships.is_empty()
+        || !view.image_sources.is_empty()
+        || view.auto_layout.as_ref().is_some_and(|layout| {
+            layout.rank_separation.is_some() || layout.node_separation.is_some()
+        })
+        || view
+            .includes
+            .iter()
+            .any(|selector| selector.value == "*?" || selector.expression)
+        || view.excludes.iter().any(|selector| selector.expression)
+}
+
 fn has_m3_element_data(element: &Element) -> bool {
     element.element_type.is_some()
         || element.url.is_some()
@@ -895,10 +1303,10 @@ fn property_pairs(properties: &[Property]) -> Vec<(&str, &str)> {
 
 pub fn export_mermaid(workspace: &Workspace, output: &Path) -> Result<(), String> {
     for view in &workspace.views {
-        let key = view.key.clone().unwrap_or_else(|| match view.kind {
-            ViewKind::SystemContext => "system-context".into(),
-            ViewKind::Container => "container".into(),
-        });
+        let key = view
+            .key
+            .clone()
+            .unwrap_or_else(|| default_view_key(&view.kind).into());
         fs::write(output.join(format!("{key}.mmd")), mermaid(workspace, view))
             .map_err(|error| format!("cannot write {key}.mmd: {error}"))?;
     }
@@ -906,22 +1314,47 @@ pub fn export_mermaid(workspace: &Workspace, output: &Path) -> Result<(), String
 }
 
 fn mermaid(workspace: &Workspace, view: &View) -> String {
-    let identifiers = view_element_ids(workspace, view);
+    if view.kind == ViewKind::Dynamic {
+        return dynamic_mermaid(workspace, view);
+    }
+    if view.kind == ViewKind::Custom {
+        return format!(
+            "%% {:?} view rendering is deferred; source metadata was preserved\n",
+            view.kind
+        );
+    }
+    if view.kind == ViewKind::Image {
+        let mut output = String::from("%% Image view rendering is deferred\n");
+        for source in &view.image_sources {
+            debug_assert!(source.span.end >= source.span.start);
+            output.push_str(&format!(
+                "%% {} {}\n",
+                source.kind,
+                source.arguments.join(" ")
+            ));
+        }
+        return output;
+    }
+    let expanded = expand_view(workspace, view);
     let mut output = String::from("flowchart LR\n");
     for element in &workspace.elements {
-        if !identifiers.contains(&element.id) {
+        if !expanded.elements.contains(&element.id) {
             continue;
         }
         let label = format!("{}\\n{}", escape(&element.name), kind_label(&element.kind));
         output.push_str(&format!("  {}[\"{}\"]\n", node_id(&element.id), label));
     }
     let mut emitted = HashSet::new();
-    for relationship in &workspace.relationships {
-        let source = view_endpoint(workspace, view, &relationship.source);
-        let destination = view_endpoint(workspace, view, &relationship.destination);
+    let endpoint_view = static_base_view(workspace, view).unwrap_or(view);
+    for (index, relationship) in workspace.relationships.iter().enumerate() {
+        if !expanded.relationships.contains(&index) {
+            continue;
+        }
+        let source = view_endpoint(workspace, endpoint_view, &relationship.source);
+        let destination = view_endpoint(workspace, endpoint_view, &relationship.destination);
         if source == destination
-            || !identifiers.contains(&source)
-            || !identifiers.contains(&destination)
+            || !expanded.elements.contains(&source)
+            || !expanded.elements.contains(&destination)
         {
             continue;
         }
@@ -943,49 +1376,419 @@ fn mermaid(workspace: &Workspace, view: &View) -> String {
     output
 }
 
-fn view_element_ids(workspace: &Workspace, view: &View) -> HashSet<String> {
-    if !view.includes.iter().any(|include| include == "*") {
-        return view.includes.iter().cloned().collect();
+#[derive(Default)]
+struct ExpandedView {
+    elements: HashSet<String>,
+    relationships: HashSet<usize>,
+}
+
+fn expand_view(workspace: &Workspace, view: &View) -> ExpandedView {
+    if view.kind == ViewKind::Filtered {
+        return expand_filtered_view(workspace, view);
     }
-    let mut identifiers = HashSet::new();
+    if view.kind == ViewKind::Deployment {
+        return expand_deployment_view(workspace, view);
+    }
+    let mut expanded = ExpandedView::default();
+    let wildcard = view
+        .includes
+        .iter()
+        .find(|selector| matches!(selector.value.as_str(), "*" | "*?"));
+    let reluctant = wildcard.is_some_and(|selector| selector.value == "*?");
+    if wildcard.is_none() {
+        apply_explicit_includes(workspace, view, &mut expanded);
+        apply_excludes(workspace, view, &mut expanded);
+        return expanded;
+    }
     match view.kind {
+        ViewKind::SystemLandscape => {
+            for element in &workspace.elements {
+                if matches!(
+                    element.kind,
+                    ElementKind::Person | ElementKind::SoftwareSystem
+                ) {
+                    expanded.elements.insert(element.id.clone());
+                }
+            }
+        }
         ViewKind::SystemContext => {
             if let Some(scope) = &view.scope {
-                identifiers.insert(scope.clone());
-                for relationship in &workspace.relationships {
-                    let source = view_endpoint(workspace, view, &relationship.source);
-                    let destination = view_endpoint(workspace, view, &relationship.destination);
+                expanded.elements.insert(scope.clone());
+                for (index, relationship) in workspace.relationships.iter().enumerate() {
+                    let source = if reluctant {
+                        relationship.source.clone()
+                    } else {
+                        view_endpoint(workspace, view, &relationship.source)
+                    };
+                    let destination = if reluctant {
+                        relationship.destination.clone()
+                    } else {
+                        view_endpoint(workspace, view, &relationship.destination)
+                    };
                     if source == *scope {
-                        identifiers.insert(destination.clone());
+                        expanded.elements.insert(destination.clone());
+                        expanded.relationships.insert(index);
                     }
                     if destination == *scope {
-                        identifiers.insert(source);
+                        expanded.elements.insert(source);
+                        expanded.relationships.insert(index);
                     }
                 }
             }
         }
         ViewKind::Container => {
             if let Some(scope) = &view.scope {
+                let mut containers = HashSet::new();
                 for element in &workspace.elements {
                     if element.parent.as_deref() == Some(scope) || element.id == *scope {
-                        identifiers.insert(element.id.clone());
+                        expanded.elements.insert(element.id.clone());
+                        if element.kind == ElementKind::Container {
+                            containers.insert(element.id.clone());
+                        }
                     }
                 }
-                for relationship in &workspace.relationships {
-                    if identifiers.contains(&relationship.source)
-                        || identifiers.contains(&relationship.destination)
+                for (index, relationship) in workspace.relationships.iter().enumerate() {
+                    let relevant = if reluctant {
+                        containers.contains(&relationship.source)
+                            || containers.contains(&relationship.destination)
+                    } else {
+                        expanded.elements.contains(&relationship.source)
+                            || expanded.elements.contains(&relationship.destination)
+                    };
+                    if relevant {
+                        for identifier in [&relationship.source, &relationship.destination] {
+                            if container_view_element_allowed(workspace, scope, identifier) {
+                                expanded.elements.insert(identifier.clone());
+                            }
+                        }
+                    }
+                    if relevant
+                        && expanded.elements.contains(&relationship.source)
+                        && expanded.elements.contains(&relationship.destination)
                     {
-                        identifiers.insert(relationship.source.clone());
-                        identifiers.insert(relationship.destination.clone());
+                        expanded.relationships.insert(index);
                     }
                 }
             }
         }
+        ViewKind::Component => {
+            if let Some(scope) = &view.scope {
+                expanded.elements.insert(scope.clone());
+                let mut components = HashSet::new();
+                for element in &workspace.elements {
+                    if element.parent.as_deref() == Some(scope) {
+                        components.insert(element.id.clone());
+                        expanded.elements.insert(element.id.clone());
+                    }
+                }
+                for (index, relationship) in workspace.relationships.iter().enumerate() {
+                    if components.contains(&relationship.source)
+                        || components.contains(&relationship.destination)
+                    {
+                        for identifier in [&relationship.source, &relationship.destination] {
+                            if component_view_element_allowed(workspace, scope, identifier) {
+                                expanded.elements.insert(identifier.clone());
+                            }
+                        }
+                        if expanded.elements.contains(&relationship.source)
+                            && expanded.elements.contains(&relationship.destination)
+                        {
+                            expanded.relationships.insert(index);
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
     }
-    for exclude in &view.excludes {
-        identifiers.remove(exclude);
+    if !reluctant {
+        for (index, relationship) in workspace.relationships.iter().enumerate() {
+            let source = view_endpoint(workspace, view, &relationship.source);
+            let destination = view_endpoint(workspace, view, &relationship.destination);
+            if source != destination
+                && expanded.elements.contains(&source)
+                && expanded.elements.contains(&destination)
+            {
+                expanded.relationships.insert(index);
+            }
+        }
     }
-    identifiers
+    apply_explicit_includes(workspace, view, &mut expanded);
+    apply_excludes(workspace, view, &mut expanded);
+    expanded
+}
+
+fn container_view_element_allowed(workspace: &Workspace, scope: &str, identifier: &str) -> bool {
+    find(workspace, identifier).is_some_and(|element| {
+        element.id == scope
+            || matches!(
+                element.kind,
+                ElementKind::Person | ElementKind::SoftwareSystem
+            )
+            || (element.kind == ElementKind::Container && element.parent.as_deref() == Some(scope))
+    })
+}
+
+fn component_view_element_allowed(workspace: &Workspace, scope: &str, identifier: &str) -> bool {
+    let system = software_system_of(workspace, scope);
+    find(workspace, identifier).is_some_and(|element| {
+        element.id == scope
+            || matches!(
+                element.kind,
+                ElementKind::Person | ElementKind::SoftwareSystem
+            )
+            || (element.kind == ElementKind::Component && element.parent.as_deref() == Some(scope))
+            || (element.kind == ElementKind::Container
+                && software_system_of(workspace, identifier) == system)
+    })
+}
+
+fn apply_explicit_includes(workspace: &Workspace, view: &View, expanded: &mut ExpandedView) {
+    for selector in &view.includes {
+        if matches!(selector.value.as_str(), "*" | "*?") {
+            continue;
+        }
+        if let Some((source, destination)) = relationship_pattern(&selector.value) {
+            for (index, relationship) in workspace.relationships.iter().enumerate() {
+                if relationship_matches(relationship, source, destination) {
+                    expanded.elements.insert(relationship.source.clone());
+                    expanded.elements.insert(relationship.destination.clone());
+                    expanded.relationships.insert(index);
+                }
+            }
+        } else if !selector.expression {
+            expanded.elements.insert(selector.value.clone());
+        }
+    }
+    for (index, relationship) in workspace.relationships.iter().enumerate() {
+        if expanded.elements.contains(&relationship.source)
+            && expanded.elements.contains(&relationship.destination)
+        {
+            expanded.relationships.insert(index);
+        }
+    }
+}
+
+fn apply_excludes(workspace: &Workspace, view: &View, expanded: &mut ExpandedView) {
+    for selector in &view.excludes {
+        if let Some((source, destination)) = relationship_pattern(&selector.value) {
+            expanded.relationships.retain(|index| {
+                !relationship_matches(&workspace.relationships[*index], source, destination)
+            });
+        } else if !selector.expression {
+            expanded.elements.remove(&selector.value);
+        }
+    }
+    expanded.relationships.retain(|index| {
+        let relationship = &workspace.relationships[*index];
+        let endpoint_view = static_base_view(workspace, view).unwrap_or(view);
+        expanded.elements.contains(&view_endpoint(
+            workspace,
+            endpoint_view,
+            &relationship.source,
+        )) && expanded.elements.contains(&view_endpoint(
+            workspace,
+            endpoint_view,
+            &relationship.destination,
+        ))
+    });
+}
+
+fn expand_filtered_view(workspace: &Workspace, view: &View) -> ExpandedView {
+    let Some(filter) = &view.filter else {
+        return ExpandedView::default();
+    };
+    let Some(base) = workspace
+        .views
+        .iter()
+        .find(|candidate| candidate.key.as_deref() == Some(&filter.base_key.identifier))
+    else {
+        return ExpandedView::default();
+    };
+    let mut expanded = expand_view(workspace, base);
+    let element_matches = |element: &Element| {
+        element
+            .tags
+            .iter()
+            .any(|tag| filter.tags.iter().any(|filter_tag| tag == filter_tag))
+    };
+    let relationship_matches_tags = |relationship: &Relationship| {
+        relationship
+            .tags
+            .iter()
+            .any(|tag| filter.tags.iter().any(|filter_tag| tag == filter_tag))
+    };
+    match filter.mode {
+        FilterMode::Include => {
+            let tagged_relationships = expanded
+                .relationships
+                .iter()
+                .copied()
+                .filter(|index| relationship_matches_tags(&workspace.relationships[*index]))
+                .collect::<HashSet<_>>();
+            expanded.elements.retain(|identifier| {
+                find(workspace, identifier).is_some_and(element_matches)
+                    || tagged_relationships.iter().any(|index| {
+                        let relationship = &workspace.relationships[*index];
+                        view_endpoint(workspace, base, &relationship.source) == *identifier
+                            || view_endpoint(workspace, base, &relationship.destination)
+                                == *identifier
+                    })
+            });
+            expanded.relationships.retain(|index| {
+                let relationship = &workspace.relationships[*index];
+                tagged_relationships.contains(index)
+                    && expanded.elements.contains(&view_endpoint(
+                        workspace,
+                        base,
+                        &relationship.source,
+                    ))
+                    && expanded.elements.contains(&view_endpoint(
+                        workspace,
+                        base,
+                        &relationship.destination,
+                    ))
+            });
+        }
+        FilterMode::Exclude => {
+            expanded.elements.retain(|identifier| {
+                find(workspace, identifier).is_none_or(|element| !element_matches(element))
+            });
+            expanded.relationships.retain(|index| {
+                let relationship = &workspace.relationships[*index];
+                !relationship_matches_tags(relationship)
+                    && expanded.elements.contains(&view_endpoint(
+                        workspace,
+                        base,
+                        &relationship.source,
+                    ))
+                    && expanded.elements.contains(&view_endpoint(
+                        workspace,
+                        base,
+                        &relationship.destination,
+                    ))
+            });
+        }
+    }
+    apply_excludes(workspace, view, &mut expanded);
+    expanded
+}
+
+fn expand_deployment_view(workspace: &Workspace, view: &View) -> ExpandedView {
+    let mut expanded = ExpandedView::default();
+    let Some(environment) = view.environment.as_ref().and_then(|reference| {
+        workspace.elements.iter().find(|element| {
+            element.kind == ElementKind::DeploymentEnvironment
+                && (element.id == reference.identifier || element.name == reference.identifier)
+        })
+    }) else {
+        return expanded;
+    };
+    for element in &workspace.elements {
+        if deployment_environment(workspace, element) != Some(&environment.id) {
+            continue;
+        }
+        let include = match element.kind {
+            ElementKind::DeploymentNode | ElementKind::InfrastructureNode => true,
+            ElementKind::ContainerInstance if view.scope.as_deref() == Some("*") => true,
+            ElementKind::ContainerInstance => {
+                element
+                    .reference
+                    .as_ref()
+                    .and_then(|reference| software_system_of(workspace, &reference.identifier))
+                    == view.scope.as_deref()
+            }
+            _ => false,
+        };
+        if include {
+            expanded.elements.insert(element.id.clone());
+        }
+    }
+    for (index, relationship) in workspace.relationships.iter().enumerate() {
+        if expanded.elements.contains(&relationship.source)
+            && expanded.elements.contains(&relationship.destination)
+        {
+            expanded.relationships.insert(index);
+        }
+    }
+    apply_excludes(workspace, view, &mut expanded);
+    expanded
+}
+
+fn dynamic_mermaid(workspace: &Workspace, view: &View) -> String {
+    let mut output = String::from("sequenceDiagram\n");
+    for instance in &view.dynamic_relationships {
+        let (Some(source), Some(destination)) = (&instance.source, &instance.destination) else {
+            continue;
+        };
+        let source_name = find(workspace, &source.identifier)
+            .map_or(source.identifier.as_str(), |element| element.name.as_str());
+        let destination_name = find(workspace, &destination.identifier)
+            .map_or(destination.identifier.as_str(), |element| {
+                element.name.as_str()
+            });
+        let label = match &instance.sequence {
+            Some(sequence) => format!(
+                "{sequence}: {}",
+                instance.description.as_deref().unwrap_or("")
+            ),
+            None => instance.description.clone().unwrap_or_default(),
+        };
+        output.push_str(&format!(
+            "  {}->>{}: {}\n",
+            escape(source_name),
+            escape(destination_name),
+            escape(&label)
+        ));
+    }
+    output
+}
+
+fn static_base_view<'a>(workspace: &'a Workspace, view: &'a View) -> Option<&'a View> {
+    view.filter.as_ref().and_then(|filter| {
+        workspace
+            .views
+            .iter()
+            .find(|candidate| candidate.key.as_deref() == Some(&filter.base_key.identifier))
+    })
+}
+
+fn relationship_pattern(value: &str) -> Option<(&str, &str)> {
+    let (source, destination) = value.split_once("->")?;
+    Some((source.trim(), destination.trim()))
+}
+
+fn relationship_matches(relationship: &Relationship, source: &str, destination: &str) -> bool {
+    (source == "*" || relationship.source == source)
+        && (destination == "*" || relationship.destination == destination)
+}
+
+fn software_system_of<'a>(workspace: &'a Workspace, identifier: &str) -> Option<&'a str> {
+    let mut current = find(workspace, identifier);
+    while let Some(element) = current {
+        if element.kind == ElementKind::SoftwareSystem {
+            return Some(&element.id);
+        }
+        current = element
+            .parent
+            .as_deref()
+            .and_then(|parent| find(workspace, parent));
+    }
+    None
+}
+
+fn default_view_key(kind: &ViewKind) -> &'static str {
+    match kind {
+        ViewKind::SystemLandscape => "system-landscape",
+        ViewKind::SystemContext => "system-context",
+        ViewKind::Container => "container",
+        ViewKind::Component => "component",
+        ViewKind::Filtered => "filtered",
+        ViewKind::Dynamic => "dynamic",
+        ViewKind::Deployment => "deployment",
+        ViewKind::Custom => "custom",
+        ViewKind::Image => "image",
+    }
 }
 
 fn view_endpoint(workspace: &Workspace, view: &View, identifier: &str) -> String {
@@ -1038,7 +1841,10 @@ fn require_kind(
                 view.scope_span.unwrap_or(view.span),
                 format!("{label} scope '{}' is a forward reference", element.id),
             )
-            .with_help("move the software system before this view"),
+            .with_help(format!(
+                "move the {} before this view",
+                element_kind_label(&kind)
+            )),
         ),
         Some(element) if element.kind == kind => {}
         Some(element) => diagnostics.push(
@@ -1049,14 +1855,20 @@ fn require_kind(
                     element.id, element.kind
                 ),
             )
-            .with_help("use a software system identifier as the view scope"),
+            .with_help(format!(
+                "use a {} identifier as the view scope",
+                element_kind_label(&kind)
+            )),
         ),
         None => diagnostics.push(
             Diagnostic::error(
                 view.scope_span.unwrap_or(view.span),
                 format!("{label} scope is missing or undefined"),
             )
-            .with_help("define the software system before this view"),
+            .with_help(format!(
+                "define the {} before this view",
+                element_kind_label(&kind)
+            )),
         ),
     }
 }
@@ -1145,7 +1957,13 @@ mod tests {
         .unwrap();
         validate(&workspace).unwrap();
         assert_eq!(workspace.identifiers, "hierarchical");
-        assert_eq!(workspace.views[0].auto_layout.as_deref(), Some("LR"));
+        assert_eq!(
+            workspace.views[0]
+                .auto_layout
+                .as_ref()
+                .map(|layout| layout.direction.as_str()),
+            Some("LR")
+        );
     }
 
     #[test]
@@ -1341,7 +2159,145 @@ mod tests {
         .unwrap_err();
         assert!(error.contains("unknown workspace statement '!include'"));
         assert!(error.contains("unknown workspace statement 'styles'"));
-        assert!(error.contains("unknown views statement 'dynamic'"));
+    }
+
+    #[test]
+    fn parses_validates_and_expands_all_m4_view_types() {
+        let workspace = compile_file("tests/fixtures/m4-views.dsl").unwrap();
+        validate(&workspace).unwrap();
+        assert_eq!(workspace.views.len(), 10);
+        assert_eq!(
+            workspace
+                .views
+                .iter()
+                .map(|view| &view.kind)
+                .collect::<Vec<_>>(),
+            vec![
+                &ViewKind::SystemLandscape,
+                &ViewKind::SystemLandscape,
+                &ViewKind::SystemContext,
+                &ViewKind::Container,
+                &ViewKind::Component,
+                &ViewKind::Filtered,
+                &ViewKind::Filtered,
+                &ViewKind::Dynamic,
+                &ViewKind::Custom,
+                &ViewKind::Image,
+            ]
+        );
+
+        let landscape = &workspace.views[0];
+        let layout = landscape.auto_layout.as_ref().unwrap();
+        assert_eq!(layout.direction, "tb");
+        assert_eq!(layout.rank_separation.as_deref(), Some("100"));
+        assert_eq!(layout.node_separation.as_deref(), Some("200"));
+        assert!(landscape.is_default);
+        assert_eq!(landscape.animations.len(), 2);
+        assert_eq!(landscape.title.as_deref(), Some("Landscape title"));
+        assert_eq!(
+            landscape.description.as_deref(),
+            Some("Landscape description")
+        );
+        assert_eq!(landscape.properties[0].key, "owner");
+        let expanded = expand_view(&workspace, landscape);
+        assert!(expanded.elements.contains("user"));
+        assert!(expanded.elements.contains("system"));
+        assert!(expanded.elements.contains("external"));
+        assert!(!expanded.elements.contains("system.web"));
+
+        let selected = expand_view(&workspace, &workspace.views[1]);
+        assert!(selected.elements.contains("user"));
+        assert!(selected.elements.contains("system"));
+        assert!(!selected.elements.contains("external"));
+        assert_eq!(workspace.views[3].includes[0].value, "*?");
+        assert!(workspace.views[2].excludes[0].expression);
+
+        let context = expand_view(&workspace, &workspace.views[2]);
+        let filtered_include = expand_view(&workspace, &workspace.views[5]);
+        let filtered_exclude = expand_view(&workspace, &workspace.views[6]);
+        assert!(context.elements.contains("external"));
+        assert!(filtered_include.elements.contains("system"));
+        assert!(!filtered_include.elements.contains("external"));
+        assert!(!filtered_exclude.elements.contains("external"));
+        assert!(expand_view(&workspace, &workspace.views[4])
+            .elements
+            .contains("system.web.controller"));
+
+        let dynamic = &workspace.views[7];
+        assert_eq!(dynamic.dynamic_relationships.len(), 2);
+        assert_eq!(
+            dynamic.dynamic_relationships[0].sequence.as_deref(),
+            Some("2")
+        );
+        assert!(mermaid(&workspace, dynamic).starts_with("sequenceDiagram\n"));
+        assert_eq!(workspace.views[8].includes[0].value, "note");
+        assert_eq!(workspace.views[9].image_sources.len(), 4);
+        assert_eq!(workspace.view_properties[0].value, "M4");
+        assert!(workspace
+            .warnings
+            .iter()
+            .any(|warning| warning.message.contains("M5")));
+        assert!(workspace
+            .warnings
+            .iter()
+            .any(|warning| warning.message.contains("not evaluated")));
+    }
+
+    #[test]
+    fn expands_m4_deployment_views_by_environment_and_scope() {
+        let workspace = compile_file("tests/fixtures/m4-deployment.dsl").unwrap();
+        validate(&workspace).unwrap();
+        let all = expand_view(&workspace, &workspace.views[0]);
+        assert!(all.elements.contains("production.node"));
+        assert!(all.elements.contains("production.node.proxy"));
+        assert!(all.elements.contains("production.node.apiInstance"));
+        assert!(all.elements.contains("production.node.workerInstance"));
+
+        let system = expand_view(&workspace, &workspace.views[1]);
+        assert!(system.elements.contains("production.node"));
+        assert!(!system.elements.contains("production.node.proxy"));
+        assert!(system.elements.contains("production.node.apiInstance"));
+        assert!(!system.elements.contains("production.node.workerInstance"));
+        assert!(mermaid(&workspace, &workspace.views[1]).starts_with("flowchart LR\n"));
+    }
+
+    #[test]
+    fn rejects_remote_m4_image_sources_without_fetching() {
+        let error = compile_file("tests/fixtures/m4-remote-image.dsl").unwrap_err();
+        assert_eq!(
+            error
+                .matches("remote image source is disabled and was not fetched")
+                .count(),
+            4
+        );
+        for source in ["plantuml", "mermaid", "kroki", "diagram.png"] {
+            assert!(error.contains(source));
+        }
+    }
+
+    #[test]
+    fn reports_m4_view_validation_errors() {
+        let workspace = compile(
+            "workspace {\n  model {\n    user = person User\n    system = softwareSystem System {\n      api = container API\n    }\n    other = softwareSystem Other\n    production = deploymentEnvironment Production\n  }\n  views {\n    systemContext system duplicate {\n      include missing\n    }\n    container system duplicate {\n      autoLayout diagonal\n    }\n    component user wrongScope {\n      include *\n    }\n    filtered absent include Tag brokenFilter {\n    }\n    dynamic * badDynamic {\n      api -> other Uses\n    }\n    dynamic system relationshipReference {\n      unknownRelationship\n    }\n    deployment user absentEnvironment badDeployment {\n      include *\n    }\n  }\n}\n",
+        )
+        .unwrap();
+        let error = validate(&workspace).unwrap_err();
+        for message in [
+            "duplicate view key 'duplicate'",
+            "view selector 'missing' is not defined",
+            "invalid autoLayout direction 'diagonal'",
+            "component view scope 'user' has wrong kind",
+            "filtered view base 'absent' is not defined",
+            "dynamic element 'api' is outside the view scope",
+            "dynamic relationship identifier 'unknownRelationship' cannot be resolved",
+            "deployment view scope 'user' has wrong kind",
+            "deployment view environment is missing or undefined",
+        ] {
+            assert!(
+                error.contains(message),
+                "missing diagnostic: {message}\n{error}"
+            );
+        }
     }
 
     #[test]

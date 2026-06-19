@@ -18,6 +18,8 @@ Status: implemented in the single-crate compiler; later-milestone behavior is pr
 
 Implement system landscape, system context, container, component, filtered, dynamic, deployment, custom, and image views.
 
+Status: implemented with deterministic static/filtered/deployment expansion, Mermaid graph/sequence export, and explicit warnings for deferred rendering semantics.
+
 ## M5 — style/theme layer
 
 Implement styles, themes, branding, terminology, light/dark styling, element styles, and relationship styles.

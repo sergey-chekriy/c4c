@@ -16,14 +16,14 @@ Implemented in this repo:
 - `person`.
 - `softwareSystem` with nested `container`.
 - `container` with optional description and technology.
-- `component` data model support in parser, although views/export are basic.
+- `component` data model and view support.
 - Relationships using `->` with optional description and technology.
 - `views` block.
-- `systemContext` view.
-- `container` view.
-- `include *`, `exclude`, `autolayout`, and `title` inside supported views.
-- Semantic validation for duplicate identifiers, relationship endpoints, parent hierarchy, and view scope types.
-- Mermaid export for supported views.
+- System landscape, system context, container, component, filtered, dynamic, deployment, custom, and image view grammar.
+- Deterministic static/filtered/deployment expansion and Mermaid graph export; dynamic views export as Mermaid sequences.
+- Multi-value include/exclude selectors, `*`, `*?`, simple relationship patterns, layout, defaults, animation, titles, descriptions, and properties.
+- Semantic validation for duplicate identifiers and view keys, references, parent hierarchy, filters, deployment environments, dynamic scopes, and view scope types.
+- Style/theme/terminology and custom/image rendering metadata are preserved with explicit deferred-feature warnings.
 
 
 Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
@@ -36,7 +36,14 @@ Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
 - Declaration-order reference validation and relationship removal with `-/>`.
 - Safe rejection of remote extensions, scripts, plugins, and custom implied-relationship classes.
 
-M4+ views, styles, preprocessing, documentation rendering, and additional exporters remain deferred.
+## Milestone 4 additions
+
+- Full view header and child grammar for every M4 view type.
+- Static, filtered, dynamic, and deployment view validation and deterministic expansion.
+- Mermaid graph/sequence output while preserving M1 System Context bubbling.
+- Safe local image metadata preservation and rejection of remote image/rendering URLs.
+
+M5+ style semantics, preprocessing, documentation rendering, and additional exporters remain deferred.
 
 ## Build
 
@@ -109,7 +116,7 @@ workspace.dsl
   -> exporters
 ```
 
-The compiler now has a span-aware lexer/parser, source diagnostics, semantic validation, and core workspace/model grammar support. Full view grammar, styles, preprocessing, documentation rendering, and additional exporters are planned in later milestones.
+The compiler now has a span-aware lexer/parser, source diagnostics, semantic validation, core model grammar, and M4 view expansion. Style semantics, preprocessing, documentation rendering, and additional exporters are planned in later milestones.
 
 ## Offline/security policy
 

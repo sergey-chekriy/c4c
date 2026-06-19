@@ -1,8 +1,9 @@
 use crate::{
     compiler::{
-        Directive, Element, ElementKind, Group, HealthCheck, NamedBlock, PreservedBlock, Property,
-        Reference, Relationship, RemovedRelationship, View, ViewKind, Workspace,
-        WorkspaceExtension,
+        AnimationStep, AutoLayout, Directive, DynamicRelationship, Element, ElementKind,
+        FilterMode, Group, HealthCheck, ImageSource, NamedBlock, PreservedBlock, Property,
+        Reference, Relationship, RemovedRelationship, View, ViewFilter, ViewKind, ViewSelector,
+        Workspace, WorkspaceExtension,
     },
     diagnostic::{render_all, Diagnostic},
     lexer::{Token, TokenKind},
@@ -878,10 +879,43 @@ impl Parser {
     }
 
     fn parse_view_statement(&mut self) {
-        if self.at_keyword("systemContext") {
-            self.parse_view(ViewKind::SystemContext);
+        let kind = if self.at_keyword("systemLandscape") {
+            Some(ViewKind::SystemLandscape)
+        } else if self.at_keyword("systemContext") {
+            Some(ViewKind::SystemContext)
         } else if self.at_keyword("container") {
-            self.parse_view(ViewKind::Container);
+            Some(ViewKind::Container)
+        } else if self.at_keyword("component") {
+            Some(ViewKind::Component)
+        } else if self.at_keyword("filtered") {
+            Some(ViewKind::Filtered)
+        } else if self.at_keyword("dynamic") {
+            Some(ViewKind::Dynamic)
+        } else if self.at_keyword("deployment") {
+            Some(ViewKind::Deployment)
+        } else if self.at_keyword("custom") {
+            Some(ViewKind::Custom)
+        } else if self.at_keyword("image") {
+            Some(ViewKind::Image)
+        } else {
+            None
+        };
+        if let Some(kind) = kind {
+            self.parse_view(kind);
+        } else if self.at_keyword("properties") {
+            let properties = self.parse_property_block("properties");
+            self.workspace.view_properties.extend(properties);
+        } else if ["styles", "theme", "themes", "terminology"]
+            .iter()
+            .any(|name| self.at_keyword(name))
+        {
+            let name = match &self.current().kind {
+                TokenKind::Identifier(name) => name.clone(),
+                _ => unreachable!(),
+            };
+            let preserved = self.parse_preserved(&name);
+            self.warn_preserved(&preserved, "view styling semantics are deferred to M5");
+            self.workspace.preserved.push(preserved);
         } else {
             self.unknown_statement("views");
         }
@@ -889,36 +923,114 @@ impl Parser {
 
     fn parse_view(&mut self, kind: ViewKind) {
         let start = self.advance();
-        let scope = self.take_identifier();
-        if scope.is_none() {
+        let mut scope = None;
+        let mut filter = None;
+        let mut environment = None;
+        let arguments = match kind {
+            ViewKind::SystemLandscape | ViewKind::Custom => self.take_values(),
+            ViewKind::Filtered => {
+                let base = self.take_identifier();
+                let mode = self.take_identifier();
+                let tags = self.take_value();
+                if let (Some((base_key, base_span)), Some((mode, mode_span)), Some((tags, _))) =
+                    (base, mode, tags)
+                {
+                    let mode = if mode.eq_ignore_ascii_case("include") {
+                        Some(FilterMode::Include)
+                    } else if mode.eq_ignore_ascii_case("exclude") {
+                        Some(FilterMode::Exclude)
+                    } else {
+                        self.error(
+                            mode_span,
+                            format!("invalid filtered view mode '{mode}'"),
+                            Some("use include or exclude"),
+                        );
+                        None
+                    };
+                    filter = mode.map(|mode| ViewFilter {
+                        base_key: Reference {
+                            identifier: base_key,
+                            span: base_span,
+                        },
+                        mode,
+                        tags: split_tags(&tags),
+                    });
+                } else {
+                    self.error(
+                        self.current().span,
+                        "filtered view requires a base key, mode, and tags",
+                        Some("use 'filtered <baseKey> <include|exclude> <tags>'"),
+                    );
+                }
+                self.take_values()
+            }
+            ViewKind::Deployment => {
+                scope = self.take_view_scope();
+                environment = self
+                    .take_value()
+                    .map(|(identifier, span)| Reference { identifier, span });
+                if environment.is_none() {
+                    self.error(
+                        self.current().span,
+                        "deployment view environment is missing",
+                        Some("add an environment identifier or name"),
+                    );
+                }
+                self.take_values()
+            }
+            ViewKind::Image => {
+                scope = self.take_view_scope();
+                self.take_values()
+            }
+            _ => {
+                scope = self.take_view_scope();
+                self.take_values()
+            }
+        };
+        let maximum = match kind {
+            ViewKind::Custom => 3,
+            ViewKind::Image => 1,
+            _ => 2,
+        };
+        self.limit_arguments(&arguments, maximum, "too many arguments for view");
+        if requires_scope(&kind) && scope.is_none() {
             self.error(
                 self.current().span,
                 format!("{} view scope is missing", view_label(&kind)),
-                Some("add a software system identifier before the view key"),
+                Some("add an element identifier or '*' before the view key"),
             );
         }
-        let arguments = self.take_values();
-        self.limit_arguments(
-            &arguments,
-            2,
-            "view accepts at most a key and description after its scope",
-        );
         if !self.open_block("view") {
             return;
         }
         let order = self.next_order();
+        let key_argument = arguments.first();
         let mut view = View {
-            kind,
+            kind: kind.clone(),
             scope: scope.as_ref().map(|scope| scope.0.clone()),
-            key: optional_argument(arguments.first()),
-            description: optional_argument(arguments.get(1)),
+            key: optional_argument(key_argument),
+            description: optional_argument(arguments.get(if kind == ViewKind::Custom {
+                2
+            } else {
+                1
+            })),
             includes: Vec::new(),
             excludes: Vec::new(),
             auto_layout: None,
-            title: None,
+            title: (kind == ViewKind::Custom)
+                .then(|| optional_argument(arguments.get(1)))
+                .flatten(),
+            is_default: false,
+            animations: Vec::new(),
+            properties: Vec::new(),
+            filter,
+            environment,
+            dynamic_relationships: Vec::new(),
+            image_sources: Vec::new(),
             order,
             span: start.span,
             scope_span: scope.as_ref().map(|scope| scope.1),
+            key_span: key_argument.map(|argument| argument.1),
         };
         loop {
             self.skip_newlines();
@@ -934,38 +1046,65 @@ impl Parser {
             }
             self.parse_view_property(&mut view);
         }
+        if matches!(view.kind, ViewKind::Custom | ViewKind::Image) {
+            self.workspace.warnings.push(
+                Diagnostic::warning(
+                    view.span,
+                    format!("{} view rendering is deferred", view_label(&view.kind)),
+                )
+                .with_help("the view grammar and metadata were preserved without remote rendering"),
+            );
+        }
         self.workspace.views.push(view);
     }
 
     fn parse_view_property(&mut self, view: &mut View) {
         if self.eat_keyword("include").is_some() {
-            if let Some(reference) = self.take_reference() {
-                view.includes.push(reference);
-            } else {
+            let selectors = self.take_view_selectors();
+            if selectors.is_empty() {
                 self.error(
                     self.current().span,
                     "include reference is missing",
                     Some("use 'include *' or an element identifier"),
                 );
             }
+            self.warn_unsupported_selectors(&selectors);
+            view.includes.extend(selectors);
             self.finish_statement("include");
         } else if self.eat_keyword("exclude").is_some() {
-            if let Some(reference) = self.take_reference() {
-                view.excludes.push(reference);
-            } else {
+            let selectors = self.take_view_selectors();
+            if selectors.is_empty() {
                 self.error(
                     self.current().span,
                     "exclude reference is missing",
                     Some("add an element identifier"),
                 );
             }
+            self.warn_unsupported_selectors(&selectors);
+            view.excludes.extend(selectors);
             self.finish_statement("exclude");
         } else if self.eat_keyword("autolayout").is_some() {
-            view.auto_layout = self
-                .take_value()
-                .map(|value| value.0)
-                .or_else(|| Some("tb".into()));
+            let start = self.tokens[self.index - 1].span;
+            let arguments = self.take_values();
+            self.limit_arguments(
+                &arguments,
+                3,
+                "autoLayout accepts direction, rank, and node separation",
+            );
+            view.auto_layout = Some(AutoLayout {
+                direction: arguments
+                    .first()
+                    .map_or_else(|| "tb".into(), |item| item.0.clone()),
+                rank_separation: optional_argument(arguments.get(1)),
+                node_separation: optional_argument(arguments.get(2)),
+                span: start,
+            });
             self.finish_statement("autolayout");
+        } else if self.eat_keyword("default").is_some() {
+            view.is_default = true;
+            self.finish_statement("default");
+        } else if self.at_keyword("animation") {
+            self.parse_animation(view);
         } else if self.eat_keyword("title").is_some() {
             view.title = self.take_value().map(|value| value.0);
             if view.title.is_none() {
@@ -976,8 +1115,259 @@ impl Parser {
                 );
             }
             self.finish_statement("title");
+        } else if self.eat_keyword("description").is_some() {
+            view.description = self.take_value().map(|value| value.0);
+            if view.description.is_none() {
+                self.error(self.current().span, "view description is missing", None);
+            }
+            self.finish_statement("description");
+        } else if self.at_keyword("properties") {
+            view.properties
+                .extend(self.parse_property_block("properties"));
+        } else if view.kind == ViewKind::Dynamic {
+            self.parse_dynamic_relationship(view);
+        } else if view.kind == ViewKind::Image
+            && ["plantuml", "mermaid", "kroki", "image"]
+                .iter()
+                .any(|name| self.at_keyword(name))
+        {
+            self.parse_image_source(view);
         } else {
             self.unknown_statement("view");
+        }
+    }
+
+    fn parse_animation(&mut self, view: &mut View) {
+        let start = self.advance();
+        if !self.open_block("animation") {
+            return;
+        }
+        loop {
+            self.skip_newlines();
+            if self.at(TokenTag::RightBrace) {
+                self.close_block("animation");
+                break;
+            }
+            if self.at(TokenTag::Eof) {
+                self.missing_closing_brace("animation");
+                break;
+            }
+            let step_start = self.current().span;
+            let elements = self
+                .take_values()
+                .into_iter()
+                .map(|(identifier, span)| Reference { identifier, span })
+                .collect::<Vec<_>>();
+            if elements.is_empty() {
+                self.error(
+                    step_start,
+                    "animation step is empty",
+                    Some("add one or more element identifiers"),
+                );
+            } else {
+                let end = elements.last().map_or(step_start, |item| item.span);
+                view.animations.push(AnimationStep {
+                    elements,
+                    span: step_start.merge(end),
+                });
+            }
+            self.finish_statement("animation");
+        }
+        if view.animations.is_empty() {
+            self.workspace.warnings.push(
+                Diagnostic::warning(start.span, "animation has no steps")
+                    .with_help("add identifiers inside the animation block"),
+            );
+        }
+    }
+
+    fn parse_dynamic_relationship(&mut self, view: &mut View) {
+        let start = self.current().span;
+        let mut sequence = None;
+        if let TokenKind::Identifier(value) = &self.current().kind {
+            if value.ends_with(':') {
+                sequence = Some(value.trim_end_matches(':').to_string());
+                self.advance();
+            }
+        }
+        let first = self.take_identifier();
+        let Some((identifier, identifier_span)) = first else {
+            self.unknown_statement("dynamic view");
+            return;
+        };
+        let mut relationship = DynamicRelationship {
+            sequence,
+            source: None,
+            destination: None,
+            relationship: None,
+            description: None,
+            technology: None,
+            span: start,
+        };
+        if self.at(TokenTag::Arrow) {
+            self.advance();
+            relationship.source = Some(Reference {
+                identifier,
+                span: identifier_span,
+            });
+            relationship.destination = self
+                .take_identifier()
+                .map(|(identifier, span)| Reference { identifier, span });
+            if relationship.destination.is_none() {
+                self.error(
+                    self.current().span,
+                    "dynamic relationship destination is missing",
+                    None,
+                );
+            }
+            let arguments = self.take_values();
+            self.limit_arguments(
+                &arguments,
+                2,
+                "dynamic relationship accepts description and technology",
+            );
+            relationship.description = optional_argument(arguments.first());
+            relationship.technology = optional_argument(arguments.get(1));
+        } else {
+            relationship.relationship = Some(Reference {
+                identifier,
+                span: identifier_span,
+            });
+            let arguments = self.take_values();
+            self.limit_arguments(
+                &arguments,
+                1,
+                "relationship reference accepts one description override",
+            );
+            relationship.description = optional_argument(arguments.first());
+        }
+        if let Some(previous) = self.tokens.get(self.index.saturating_sub(1)) {
+            relationship.span = start.merge(previous.span);
+        }
+        self.finish_statement("dynamic relationship");
+        view.dynamic_relationships.push(relationship);
+    }
+
+    fn parse_image_source(&mut self, view: &mut View) {
+        let start = self.advance();
+        let kind = match &start.kind {
+            TokenKind::Identifier(value) => value.clone(),
+            _ => unreachable!(),
+        };
+        let arguments = self.take_values();
+        let expected = if kind.eq_ignore_ascii_case("kroki") {
+            2
+        } else {
+            1
+        };
+        if arguments.len() != expected {
+            self.error(
+                start.span,
+                format!("{kind} image source expects {expected} argument(s)"),
+                None,
+            );
+        }
+        if let Some((_, span)) = arguments.iter().find(|(value, _)| is_remote_url(value)) {
+            self.error(
+                *span,
+                "remote image source is disabled and was not fetched",
+                Some("use a local file or view key; remote rendering is not allowed"),
+            );
+        }
+        let span = arguments
+            .last()
+            .map_or(start.span, |item| start.span.merge(item.1));
+        view.image_sources.push(ImageSource {
+            kind,
+            arguments: arguments.into_iter().map(|item| item.0).collect(),
+            span,
+        });
+        self.finish_statement("image source");
+    }
+
+    fn take_view_scope(&mut self) -> Option<(String, Span)> {
+        if self.at(TokenTag::Star) {
+            let span = self.advance().span;
+            Some(("*".into(), span))
+        } else {
+            self.take_identifier()
+        }
+    }
+
+    fn take_view_selectors(&mut self) -> Vec<ViewSelector> {
+        let mut tokens = Vec::new();
+        while !self.at(TokenTag::Newline)
+            && !self.at(TokenTag::RightBrace)
+            && !self.at(TokenTag::Eof)
+        {
+            tokens.push(self.advance());
+        }
+        if tokens.iter().any(|token| {
+            matches!(
+                token.kind,
+                TokenKind::Arrow
+                    | TokenKind::Equals
+                    | TokenKind::DoubleEquals
+                    | TokenKind::NotEquals
+                    | TokenKind::And
+                    | TokenKind::Or
+                    | TokenKind::LeftParen
+                    | TokenKind::RightParen
+            )
+        }) {
+            let span = tokens
+                .first()
+                .unwrap()
+                .span
+                .merge(tokens.last().unwrap().span);
+            return vec![ViewSelector {
+                value: tokens
+                    .iter()
+                    .map(|token| token_text(&token.kind))
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                span,
+                expression: true,
+            }];
+        }
+        tokens
+            .into_iter()
+            .map(|token| {
+                let value = match &token.kind {
+                    TokenKind::Star => "*".into(),
+                    TokenKind::ReluctantStar => "*?".into(),
+                    TokenKind::Identifier(value) | TokenKind::String(value) => value.clone(),
+                    _ => token_text(&token.kind),
+                };
+                let expression = value.contains("->")
+                    || value.contains(' ')
+                    || value.contains("==")
+                    || value.contains("!=");
+                ViewSelector {
+                    value,
+                    span: token.span,
+                    expression,
+                }
+            })
+            .collect()
+    }
+
+    fn warn_unsupported_selectors(&mut self, selectors: &[ViewSelector]) {
+        for selector in selectors {
+            if selector.expression && !selector.value.contains("->") {
+                self.workspace.warnings.push(
+                    Diagnostic::warning(
+                        selector.span,
+                        format!(
+                            "view expression '{}' was preserved but is not evaluated",
+                            selector.value
+                        ),
+                    )
+                    .with_help(
+                        "use identifiers, wildcards, or a simple source -> destination pattern",
+                    ),
+                );
+            }
         }
     }
 
@@ -1008,15 +1398,6 @@ impl Parser {
                 Some((value, span))
             }
             _ => None,
-        }
-    }
-
-    fn take_reference(&mut self) -> Option<String> {
-        if self.at(TokenTag::Star) {
-            self.advance();
-            Some("*".into())
-        } else {
-            self.take_identifier().map(|reference| reference.0)
         }
     }
 
@@ -1137,7 +1518,7 @@ impl Parser {
         self.error(
             token.span,
             format!("unknown {context} statement '{}'", token_text(&token.kind)),
-            Some("this feature is not part of the M3 core grammar"),
+            Some("this feature is not part of the implemented M4 grammar"),
         );
         self.skip_statement();
     }
@@ -1419,9 +1800,32 @@ fn element_label(kind: &ElementKind) -> &'static str {
 
 fn view_label(kind: &ViewKind) -> &'static str {
     match kind {
+        ViewKind::SystemLandscape => "systemLandscape",
         ViewKind::SystemContext => "systemContext",
         ViewKind::Container => "container",
+        ViewKind::Component => "component",
+        ViewKind::Filtered => "filtered",
+        ViewKind::Dynamic => "dynamic",
+        ViewKind::Deployment => "deployment",
+        ViewKind::Custom => "custom",
+        ViewKind::Image => "image",
     }
+}
+
+fn requires_scope(kind: &ViewKind) -> bool {
+    matches!(
+        kind,
+        ViewKind::SystemContext
+            | ViewKind::Container
+            | ViewKind::Component
+            | ViewKind::Dynamic
+            | ViewKind::Deployment
+            | ViewKind::Image
+    )
+}
+
+fn is_remote_url(value: &str) -> bool {
+    value.starts_with("http://") || value.starts_with("https://")
 }
 
 fn token_text(kind: &TokenKind) -> String {
@@ -1432,9 +1836,16 @@ fn token_text(kind: &TokenKind) -> String {
         TokenKind::LeftBrace => "{".into(),
         TokenKind::RightBrace => "}".into(),
         TokenKind::Equals => "=".into(),
+        TokenKind::DoubleEquals => "==".into(),
+        TokenKind::NotEquals => "!=".into(),
+        TokenKind::And => "&&".into(),
+        TokenKind::Or => "||".into(),
+        TokenKind::LeftParen => "(".into(),
+        TokenKind::RightParen => ")".into(),
         TokenKind::Arrow => "->".into(),
         TokenKind::RemoveArrow => "-/>".into(),
         TokenKind::Star => "*".into(),
+        TokenKind::ReluctantStar => "*?".into(),
         TokenKind::Newline => "newline".into(),
         TokenKind::Eof => "end of file".into(),
     }
