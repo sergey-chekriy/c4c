@@ -1,0 +1,49 @@
+# Roadmap
+
+## M1 — prototype subset
+
+A dependency-free Rust prototype that validates and exports a small but useful Structurizr DSL subset.
+
+## M2 — industrial parser/diagnostics
+
+Introduce formal lexer/parser, source spans, recoverable errors, and compiler-quality diagnostics.
+
+## M3 — full core model grammar
+
+Implement all workspace/model constructs from the language reference: workspace extension, docs/ADRs, properties, identifiers, implied relationships, enterprise, groups, generic elements, deployment environments/nodes/groups, infrastructure nodes, system/container instances, and relationship removal.
+
+## M4 — full view grammar
+
+Implement system landscape, system context, container, component, filtered, dynamic, deployment, custom, and image views.
+
+## M5 — style/theme layer
+
+Implement styles, themes, branding, terminology, light/dark styling, element styles, and relationship styles.
+
+## M6 — preprocessing and advanced DSL features
+
+Implement includes, constants, substitution, expressions, scripts/plugins as safe parsed constructs, and explicit network opt-in for URL usage.
+
+## M7 — documentation and ADRs
+
+Import Markdown/AsciiDoc documentation and ADRs; generate static documentation site.
+
+## M8 — exporters
+
+Support JSON, Mermaid, D2, PlantUML, C4-PlantUML, DOT, SVG/PNG, Draw.io, Markdown, and static HTML.
+
+## M9 — compatibility suite
+
+Add fixture coverage for every language construct and compare outputs against expected snapshots.
+
+## M10 — LSP/editor support
+
+Local-only LSP for diagnostics, completion, hover, references, rename, semantic tokens, and preview support.
+
+## M11 — Archi/ArchiMate bridge
+
+Optional import/export bridge while keeping ArchiMate semantics outside the C4 compiler core.
+
+## M12 — release engineering
+
+CI, cross-platform binaries, Homebrew, checksums, SBOM, and supply-chain review.

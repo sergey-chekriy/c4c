@@ -1,0 +1,8 @@
+[package]
+name = "c4c"
+version = "0.1.0"
+edition = "2021"
+description = "Local Structurizr DSL compiler prototype"
+license = "MIT"
+
+[dependencies]
