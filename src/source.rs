@@ -80,19 +80,26 @@ pub struct SourceMap {
 }
 
 impl SourceMap {
-    pub fn from_text(path: impl Into<PathBuf>, text: impl Into<String>) -> (Self, SourceId) {
-        let id = SourceId(0);
-        (
-            Self {
-                files: vec![SourceFile::new(id, path, text.into())],
-            },
-            id,
-        )
+    pub fn new() -> Self {
+        Self { files: Vec::new() }
     }
 
-    pub fn load(path: &str) -> Result<(Self, SourceId), String> {
+    pub fn add_text(&mut self, path: impl Into<PathBuf>, text: impl Into<String>) -> SourceId {
+        let id = SourceId(self.files.len());
+        self.files.push(SourceFile::new(id, path, text.into()));
+        id
+    }
+
+    pub fn add_file(&mut self, path: &str) -> Result<SourceId, String> {
         let text = fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
-        Ok(Self::from_text(path, text))
+        Ok(self.add_text(path, text))
+    }
+
+    #[cfg(test)]
+    pub fn from_text(path: impl Into<PathBuf>, text: impl Into<String>) -> (Self, SourceId) {
+        let mut sources = Self::new();
+        let id = sources.add_text(path, text);
+        (sources, id)
     }
 
     pub fn get(&self, id: SourceId) -> &SourceFile {

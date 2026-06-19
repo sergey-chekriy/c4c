@@ -12,6 +12,7 @@ pub enum TokenKind {
     RightBrace,
     Equals,
     Arrow,
+    RemoveArrow,
     Star,
     Newline,
     Eof,
@@ -59,6 +60,10 @@ impl Lexer<'_> {
                 '\\' if self.rest().starts_with("\\\r\n") => self.offset += 3,
                 '/' if self.rest().starts_with("//") => self.skip_comment(),
                 '#' => self.skip_comment(),
+                '-' if self.rest().starts_with("-/>") => {
+                    self.offset += 3;
+                    self.push(TokenKind::RemoveArrow, start, self.offset);
+                }
                 '-' if self.rest().starts_with("->") => {
                     self.offset += 2;
                     self.push(TokenKind::Arrow, start, self.offset);
@@ -206,5 +211,5 @@ impl Lexer<'_> {
 }
 
 fn is_identifier(character: char) -> bool {
-    character.is_alphanumeric() || matches!(character, '_' | '-' | '.' | '/')
+    character.is_alphanumeric() || matches!(character, '_' | '-' | '.' | '/' | ':')
 }

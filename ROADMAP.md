@@ -12,6 +12,8 @@ Introduce formal lexer/parser, source spans, recoverable errors, and compiler-qu
 
 Implement all workspace/model constructs from the language reference: workspace extension, docs/ADRs, properties, identifiers, implied relationships, enterprise, groups, generic elements, deployment environments/nodes/groups, infrastructure nodes, system/container instances, and relationship removal.
 
+Status: implemented in the single-crate compiler; later-milestone behavior is preserved or rejected safely.
+
 ## M4 — full view grammar
 
 Implement system landscape, system context, container, component, filtered, dynamic, deployment, custom, and image views.

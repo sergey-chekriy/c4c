@@ -28,6 +28,16 @@ Implemented in this repo:
 
 Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
 
+## Milestone 3 additions
+
+- Core workspace properties, local workspace extension, docs/ADR preservation, and configuration preservation.
+- Flat/hierarchical identifiers, enterprise/groups, generic elements, and common child properties.
+- Deployment environments, groups, nodes, infrastructure nodes, system/container instances, and health checks.
+- Declaration-order reference validation and relationship removal with `-/>`.
+- Safe rejection of remote extensions, scripts, plugins, and custom implied-relationship classes.
+
+M4+ views, styles, preprocessing, documentation rendering, and additional exporters remain deferred.
+
 ## Build
 
 ```bash

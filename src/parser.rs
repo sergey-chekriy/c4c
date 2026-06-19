@@ -1,45 +1,54 @@
 use crate::{
-    compiler::{Element, ElementKind, Relationship, View, ViewKind, Workspace},
+    compiler::{
+        Directive, Element, ElementKind, Group, HealthCheck, NamedBlock, PreservedBlock, Property,
+        Reference, Relationship, RemovedRelationship, View, ViewKind, Workspace,
+        WorkspaceExtension,
+    },
     diagnostic::{render_all, Diagnostic},
     lexer::{Token, TokenKind},
     source::{SourceId, SourceMap, Span},
 };
 
 pub fn parse(
-    sources: SourceMap,
+    sources: &SourceMap,
     source_id: SourceId,
     tokens: Vec<Token>,
+    identifiers: &str,
 ) -> Result<Workspace, String> {
-    let mut parser = Parser::new(sources, source_id, tokens);
+    let mut parser = Parser::new(sources.clone(), source_id, tokens, identifiers);
     parser.parse_workspace();
     if parser.diagnostics.is_empty() {
         Ok(parser.workspace)
     } else {
-        Err(render_all(&parser.diagnostics, &parser.sources))
+        Err(render_all(&parser.diagnostics, sources))
     }
 }
 
 struct Parser {
-    sources: SourceMap,
     tokens: Vec<Token>,
     index: usize,
+    order: usize,
     diagnostics: Vec<Diagnostic>,
     workspace: Workspace,
-    id_stack: Vec<String>,
+    parent_stack: Vec<String>,
+    group_stack: Vec<usize>,
 }
 
 impl Parser {
-    fn new(sources: SourceMap, source_id: SourceId, tokens: Vec<Token>) -> Self {
+    fn new(sources: SourceMap, source_id: SourceId, tokens: Vec<Token>, identifiers: &str) -> Self {
+        let mut workspace = Workspace::new(
+            sources.clone(),
+            Span::new(source_id, 0, sources.get(source_id).text.len()),
+        );
+        workspace.identifiers = identifiers.into();
         Self {
-            workspace: Workspace::new(
-                sources.clone(),
-                Span::new(source_id, 0, sources.get(source_id).text.len()),
-            ),
-            sources,
+            workspace,
             tokens,
             index: 0,
+            order: 0,
             diagnostics: Vec::new(),
-            id_stack: Vec::new(),
+            parent_stack: Vec::new(),
+            group_stack: Vec::new(),
         }
     }
 
@@ -53,16 +62,27 @@ impl Parser {
             );
             return;
         };
-        let arguments = self.take_values();
-        if arguments.len() > 2 {
-            self.error(
-                arguments[2].1,
+        if self.eat_keyword("extends").is_some() {
+            if let Some((target, span)) = self.take_value() {
+                self.workspace.extension = Some(WorkspaceExtension { target, span });
+            } else {
+                self.error(
+                    self.current().span,
+                    "workspace extension target is missing",
+                    Some("add a local .dsl path after 'extends'"),
+                );
+            }
+        } else {
+            let arguments = self.take_values();
+            self.limit_arguments(
+                &arguments,
+                2,
                 "workspace accepts at most a name and description",
-                None,
             );
+            self.workspace.attributes = argument_properties(&arguments, &["name", "description"]);
+            self.workspace.name = optional_argument(arguments.first());
+            self.workspace.description = optional_argument(arguments.get(1));
         }
-        self.workspace.name = optional_argument(arguments.first());
-        self.workspace.description = optional_argument(arguments.get(1));
         if !self.open_block("workspace") {
             return;
         }
@@ -76,15 +96,7 @@ impl Parser {
                 self.missing_closing_brace("workspace");
                 break None;
             }
-            if self.at_bang("identifiers") {
-                self.parse_identifiers();
-            } else if self.at_keyword("model") {
-                self.parse_model();
-            } else if self.at_keyword("views") {
-                self.parse_views();
-            } else {
-                self.unknown_statement("workspace");
-            }
+            self.parse_workspace_statement();
         };
         if let Some(end) = end {
             self.workspace.span = start.span.merge(end.span);
@@ -99,22 +111,61 @@ impl Parser {
         }
     }
 
+    fn parse_workspace_statement(&mut self) {
+        if self.at_bang("identifiers") {
+            self.parse_identifiers();
+        } else if self.at_bang("docs") || self.at_bang("adrs") {
+            let directive = self.parse_directive();
+            self.warn_deferred(&directive, "documentation import is deferred to M7");
+            self.workspace.directives.push(directive);
+        } else if self.at_bang("script") || self.at_bang("plugin") {
+            self.parse_unsafe_directive();
+        } else if self.at_keyword("model") {
+            self.parse_model();
+        } else if self.at_keyword("views") {
+            self.parse_views();
+        } else if self.at_keyword("name") {
+            if let Some(property) = self.parse_single_property("name") {
+                self.workspace.name = Some(property.value.clone());
+                self.workspace.attributes.push(property);
+            }
+        } else if self.at_keyword("description") {
+            if let Some(property) = self.parse_single_property("description") {
+                self.workspace.description = Some(property.value.clone());
+                self.workspace.attributes.push(property);
+            }
+        } else if self.at_keyword("properties") {
+            let properties = self.parse_property_block("properties");
+            self.workspace.properties.extend(properties);
+        } else if self.at_keyword("configuration") {
+            let preserved = self.parse_preserved("configuration");
+            self.warn_preserved(&preserved, "configuration semantics are deferred");
+            self.workspace.preserved.push(preserved);
+        } else {
+            self.unknown_statement("workspace");
+        }
+    }
+
     fn parse_identifiers(&mut self) {
         let keyword = self.advance();
+        self.workspace.identifiers_explicit = true;
         let value = self.take_value();
         match value {
+            Some((value, _)) if value.eq_ignore_ascii_case("flat") => {
+                self.workspace.identifiers = "flat".into();
+            }
             Some((value, _)) if value.eq_ignore_ascii_case("hierarchical") => {
                 self.workspace.identifiers = "hierarchical".into();
             }
             Some((value, span)) => self.error(
                 span,
-                format!("unsupported identifier mode '{value}' in M2"),
-                Some("use '!identifiers hierarchical'"),
+                format!("unsupported identifier mode '{value}'"),
+                Some("use '!identifiers flat' or '!identifiers hierarchical'"),
             ),
             None => self.error(
                 keyword.span,
                 "missing identifier mode",
-                Some("use '!identifiers hierarchical'"),
+                Some("use '!identifiers flat' or '!identifiers hierarchical'"),
             ),
         }
         self.finish_statement("identifier mode");
@@ -125,54 +176,100 @@ impl Parser {
         if !self.open_block("model") {
             return;
         }
+        self.parse_model_block("model");
+    }
+
+    fn parse_model_block(&mut self, label: &str) -> Option<Token> {
         loop {
             self.skip_newlines();
             if self.at(TokenTag::RightBrace) {
-                self.close_block("model");
-                return;
+                return self.close_block(label);
             }
             if self.at(TokenTag::Eof) {
-                self.missing_closing_brace("model");
-                return;
+                self.missing_closing_brace(label);
+                return None;
             }
             self.parse_model_statement();
         }
     }
 
     fn parse_model_statement(&mut self) {
-        if self.relationship_ahead() {
+        if self.relationship_ahead(TokenTag::Arrow) {
             self.parse_relationship();
             return;
         }
+        if self.relationship_ahead(TokenTag::RemoveArrow) {
+            self.parse_removed_relationship();
+            return;
+        }
+        if self.at_bang("identifiers") {
+            self.parse_identifiers();
+            return;
+        }
+        if self.at_bang("impliedRelationships") {
+            self.parse_implied_relationships();
+            return;
+        }
+        if self.at_bang("docs") || self.at_bang("adrs") {
+            let directive = self.parse_directive();
+            self.warn_deferred(&directive, "documentation import is deferred to M7");
+            self.workspace.directives.push(directive);
+            return;
+        }
+        if self.at_bang("script") || self.at_bang("plugin") {
+            self.parse_unsafe_directive();
+            return;
+        }
+        if self.at_any_bang(&[
+            "extend",
+            "ref",
+            "element",
+            "elements",
+            "relationship",
+            "relationships",
+            "components",
+        ]) {
+            let directive = self.parse_directive();
+            self.warn_deferred(
+                &directive,
+                "directive semantics are deferred; syntax was preserved",
+            );
+            self.workspace.directives.push(directive);
+            return;
+        }
+        if self.at_keyword("archetypes") {
+            let preserved = self.parse_preserved("archetypes");
+            self.warn_preserved(
+                &preserved,
+                "archetype expansion is deferred; syntax was preserved",
+            );
+            self.workspace.preserved.push(preserved);
+            return;
+        }
+        if self.at_keyword("enterprise") {
+            self.parse_enterprise();
+            return;
+        }
+        if self.at_keyword("group") {
+            self.parse_group();
+            return;
+        }
+
         let statement_start = self.current().span;
         let assigned = if self.identifier_ahead() && self.nth_at(1, TokenTag::Equals) {
-            let (identifier, span) = self.take_identifier().unwrap();
+            let identifier = self.take_identifier().unwrap();
             self.advance();
-            Some((identifier, span))
+            Some(identifier)
         } else {
             None
         };
-
-        let kind = if self.at_keyword("person") {
-            Some((ElementKind::Person, false))
-        } else if self.at_keyword("softwareSystem") {
-            Some((ElementKind::SoftwareSystem, true))
-        } else if self.at_keyword("container") {
-            Some((ElementKind::Container, true))
-        } else if self.at_keyword("component") {
-            Some((ElementKind::Component, false))
-        } else {
-            None
-        };
-        if let Some((kind, may_have_children)) = kind {
-            self.parse_element(statement_start, assigned, kind, may_have_children);
+        if let Some(kind) = self.current_element_kind() {
+            self.parse_element(statement_start, assigned, kind);
         } else if assigned.is_some() {
             self.error(
                 self.current().span,
-                "expected an M1 element type after '='",
-                Some(
-                    "supported element types are person, softwareSystem, container, and component",
-                ),
+                "expected an M3 element type after '='",
+                Some("check the core model element keyword"),
             );
             self.skip_statement();
         } else {
@@ -180,106 +277,176 @@ impl Parser {
         }
     }
 
+    fn parse_implied_relationships(&mut self) {
+        let keyword = self.advance();
+        let value = self
+            .take_value()
+            .map(|value| value.0)
+            .unwrap_or_else(|| "true".into());
+        if !value.eq_ignore_ascii_case("true") && !value.eq_ignore_ascii_case("false") {
+            self.error(
+                keyword.span,
+                format!("custom implied relationship strategy '{value}' is not supported"),
+                Some("use true or false; external classes are never loaded"),
+            );
+        }
+        self.workspace.implied_relationships = Some(value);
+        self.finish_statement("implied relationships");
+    }
+
+    fn parse_enterprise(&mut self) {
+        let start = self.advance();
+        let Some((name, _)) = self.take_value() else {
+            self.error(self.current().span, "enterprise name is missing", None);
+            self.skip_statement();
+            return;
+        };
+        if !self.open_block("enterprise") {
+            return;
+        }
+        let end = self.parse_model_block("enterprise");
+        self.workspace.enterprise = Some(NamedBlock {
+            name,
+            span: end.map_or(start.span, |end| start.span.merge(end.span)),
+        });
+    }
+
+    fn parse_group(&mut self) {
+        let start = self.advance();
+        let Some((name, _)) = self.take_value() else {
+            self.error(self.current().span, "group name is missing", None);
+            self.skip_statement();
+            return;
+        };
+        if !self.open_block("group") {
+            return;
+        }
+        let index = self.workspace.groups.len();
+        let owner = self.parent_stack.last().cloned();
+        self.workspace.groups.push(Group {
+            name,
+            parent: self
+                .group_stack
+                .last()
+                .copied()
+                .filter(|group| self.workspace.groups[*group].owner == owner),
+            owner,
+            span: start.span,
+        });
+        self.group_stack.push(index);
+        if let Some(end) = self.parse_model_block("group") {
+            self.workspace.groups[index].span = start.span.merge(end.span);
+        }
+        self.group_stack.pop();
+    }
+
+    fn current_element_kind(&self) -> Option<ElementKind> {
+        [
+            ("person", ElementKind::Person),
+            ("softwareSystem", ElementKind::SoftwareSystem),
+            ("container", ElementKind::Container),
+            ("component", ElementKind::Component),
+            ("element", ElementKind::Generic),
+            ("deploymentEnvironment", ElementKind::DeploymentEnvironment),
+            ("deploymentGroup", ElementKind::DeploymentGroup),
+            ("deploymentNode", ElementKind::DeploymentNode),
+            ("infrastructureNode", ElementKind::InfrastructureNode),
+            (
+                "softwareSystemInstance",
+                ElementKind::SoftwareSystemInstance,
+            ),
+            ("containerInstance", ElementKind::ContainerInstance),
+        ]
+        .into_iter()
+        .find_map(|(keyword, kind)| self.at_keyword(keyword).then_some(kind))
+    }
+
     fn parse_element(
         &mut self,
         statement_start: Span,
         assigned: Option<(String, Span)>,
         kind: ElementKind,
-        may_have_children: bool,
     ) {
         let keyword = self.advance();
         let arguments = self.take_values();
-        let Some((name, _)) = arguments.first().cloned() else {
+        let Some((first, first_span)) = arguments.first().cloned() else {
             self.error(
                 self.current().span,
-                format!("{} name is missing", element_label(&kind)),
-                Some("add a quoted or unquoted name on this line"),
+                format!("{} value is missing", element_label(&kind)),
+                Some("add the required name or referenced identifier"),
             );
             self.finish_statement("element");
             return;
         };
-        if name.is_empty() {
-            self.error(
-                arguments[0].1,
-                format!("{} name cannot be empty", element_label(&kind)),
-                None,
-            );
+        if first.is_empty() {
+            self.error(first_span, "required element value cannot be empty", None);
         }
+        let maximum = maximum_arguments(&kind);
+        self.limit_arguments(
+            &arguments,
+            maximum,
+            &format!("too many properties for {}", element_label(&kind)),
+        );
 
-        let maximum_arguments = if matches!(kind, ElementKind::Container | ElementKind::Component) {
-            4
-        } else {
-            3
-        };
-        if arguments.len() > maximum_arguments {
-            self.error(
-                arguments[maximum_arguments].1,
-                format!("too many properties for {}", element_label(&kind)),
-                None,
-            );
-        }
-        let description = optional_argument(arguments.get(1));
-        let (technology, tags_index) =
-            if matches!(kind, ElementKind::Container | ElementKind::Component) {
-                (optional_argument(arguments.get(2)), 3)
-            } else {
-                (None, 2)
-            };
-        let tags = optional_argument(arguments.get(tags_index))
-            .map(|tags| split_tags(&tags))
-            .unwrap_or_default();
-        let (base_id, id_span) = assigned.unwrap_or_else(|| (slug(&name), arguments[0].1));
-        let id = if self.workspace.identifiers == "hierarchical" {
-            self.id_stack
-                .last()
-                .map(|parent| format!("{parent}.{base_id}"))
-                .unwrap_or(base_id)
-        } else {
-            base_id
-        };
-        let parent = self.id_stack.last().cloned();
+        let instance = matches!(
+            kind,
+            ElementKind::SoftwareSystemInstance | ElementKind::ContainerInstance
+        );
+        let reference = instance.then(|| Reference {
+            identifier: first.clone(),
+            span: first_span,
+        });
+        let inline = inline_properties(&kind, &arguments);
+        let (base_id, id_span) = assigned.unwrap_or_else(|| (slug(&first), first_span));
+        let id = self.qualify_identifier(base_id);
+        let parent = self.parent_stack.last().cloned();
         let mut span = statement_start.merge(
             arguments
                 .last()
                 .map(|argument| argument.1)
                 .unwrap_or(keyword.span),
         );
-        let element_index = self.workspace.elements.len();
+        let index = self.workspace.elements.len();
+        let order = self.next_order();
+        let attributes = element_argument_properties(&kind, &arguments);
         self.workspace.elements.push(Element {
             id: id.clone(),
             kind,
-            name,
-            description,
-            technology,
+            name: first,
+            description: inline.description,
+            technology: inline.technology,
             parent,
-            tags,
+            group: self.group_stack.last().copied().filter(|group| {
+                self.workspace.groups[*group].owner.as_ref() == self.parent_stack.last()
+            }),
+            tags: inline.tags,
+            url: None,
+            attributes,
+            properties: Vec::new(),
+            perspectives: Vec::new(),
+            instances: inline.instances,
+            instance_of: None,
+            reference,
+            deployment_groups: inline.deployment_groups,
+            health_checks: Vec::new(),
+            directives: Vec::new(),
+            element_type: inline.element_type,
+            order,
             span,
             id_span,
         });
 
         if self.at(TokenTag::LeftBrace) {
-            if !may_have_children {
-                self.error(
-                    self.current().span,
-                    format!(
-                        "{} child blocks are not supported in M2",
-                        element_label(&self.workspace.elements[element_index].kind)
-                    ),
-                    None,
-                );
-                self.skip_statement();
-                return;
-            }
             if !self.open_block("element") {
                 return;
             }
-            self.id_stack.push(id);
+            self.parent_stack.push(id);
             loop {
                 self.skip_newlines();
                 if self.at(TokenTag::RightBrace) {
                     if let Some(end) = self.close_block("element") {
                         span = span.merge(end.span);
-                        self.workspace.elements[element_index].span = span;
+                        self.workspace.elements[index].span = span;
                     }
                     break;
                 }
@@ -287,12 +454,110 @@ impl Parser {
                     self.missing_closing_brace("element");
                     break;
                 }
-                self.parse_model_statement();
+                if !self.parse_element_property(index) {
+                    self.parse_model_statement();
+                }
             }
-            self.id_stack.pop();
+            self.parent_stack.pop();
         } else {
             self.finish_statement("element");
         }
+    }
+
+    fn parse_element_property(&mut self, index: usize) -> bool {
+        if self.at_keyword("description") {
+            if let Some(property) = self.parse_single_property("description") {
+                self.workspace.elements[index].description = Some(property.value.clone());
+                self.workspace.elements[index].attributes.push(property);
+            }
+        } else if self.at_keyword("technology") {
+            if let Some(property) = self.parse_single_property("technology") {
+                self.workspace.elements[index].technology = Some(property.value.clone());
+                self.workspace.elements[index].attributes.push(property);
+            }
+        } else if self.at_keyword("tag") {
+            if let Some(property) = self.parse_single_property("tag") {
+                self.workspace.elements[index]
+                    .tags
+                    .push(property.value.clone());
+                self.workspace.elements[index].attributes.push(property);
+            }
+        } else if self.at_keyword("tags") {
+            if let Some(property) = self.parse_single_property("tags") {
+                self.workspace.elements[index]
+                    .tags
+                    .extend(split_tags(&property.value));
+                self.workspace.elements[index].attributes.push(property);
+            }
+        } else if self.at_keyword("url") {
+            if let Some(property) = self.parse_single_property("url") {
+                self.workspace.elements[index].url = Some(property.value.clone());
+                self.workspace.elements[index].attributes.push(property);
+            }
+        } else if self.at_keyword("instances") {
+            if let Some(property) = self.parse_single_property("instances") {
+                self.workspace.elements[index].instances = Some(property.value.clone());
+                self.workspace.elements[index].attributes.push(property);
+            }
+        } else if self.at_keyword("instanceOf") {
+            let start = self.advance();
+            self.workspace.elements[index].instance_of = self
+                .take_identifier()
+                .map(|(identifier, span)| Reference { identifier, span });
+            if self.workspace.elements[index].instance_of.is_none() {
+                self.error(start.span, "instanceOf reference is missing", None);
+            }
+            self.finish_statement("instanceOf");
+        } else if self.at_keyword("properties") {
+            let properties = self.parse_property_block("properties");
+            self.workspace.elements[index].properties.extend(properties);
+        } else if self.at_keyword("perspectives") {
+            let perspectives = self.parse_property_block("perspectives");
+            self.workspace.elements[index]
+                .perspectives
+                .extend(perspectives);
+        } else if self.at_keyword("healthCheck") {
+            self.parse_health_check(index);
+        } else if self.at_bang("docs") || self.at_bang("adrs") {
+            let directive = self.parse_directive();
+            self.warn_deferred(&directive, "documentation import is deferred to M7");
+            self.workspace.elements[index].directives.push(directive);
+        } else if self.at_bang("components") {
+            let directive = self.parse_directive();
+            self.warn_deferred(
+                &directive,
+                "component discovery is deferred; syntax was preserved",
+            );
+            self.workspace.elements[index].directives.push(directive);
+        } else {
+            return false;
+        }
+        true
+    }
+
+    fn parse_health_check(&mut self, index: usize) {
+        let start = self.advance();
+        let arguments = self.take_values();
+        if arguments.len() < 2 {
+            self.error(
+                start.span,
+                "healthCheck requires a name and URL",
+                Some("use healthCheck <name> <url> [interval] [timeout]"),
+            );
+        } else {
+            self.limit_arguments(&arguments, 4, "healthCheck accepts at most four values");
+            let end = arguments.last().unwrap().1;
+            self.workspace.elements[index]
+                .health_checks
+                .push(HealthCheck {
+                    name: arguments[0].0.clone(),
+                    url: arguments[1].0.clone(),
+                    interval: optional_argument(arguments.get(2)),
+                    timeout: optional_argument(arguments.get(3)),
+                    span: start.span.merge(end),
+                });
+        }
+        self.finish_statement("healthCheck");
     }
 
     fn parse_relationship(&mut self) {
@@ -308,17 +573,17 @@ impl Parser {
             return;
         };
         let arguments = self.take_values();
-        if arguments.len() > 3 {
-            self.error(
-                arguments[3].1,
-                "relationship accepts at most description, technology, and tags",
-                None,
-            );
-        }
+        self.limit_arguments(
+            &arguments,
+            3,
+            "relationship accepts at most description, technology, and tags",
+        );
         let end = arguments
             .last()
             .map(|argument| argument.1)
             .unwrap_or(destination_span);
+        let index = self.workspace.relationships.len();
+        let order = self.next_order();
         self.workspace.relationships.push(Relationship {
             source,
             destination,
@@ -327,11 +592,270 @@ impl Parser {
             tags: optional_argument(arguments.get(2))
                 .map(|tags| split_tags(&tags))
                 .unwrap_or_default(),
+            url: None,
+            attributes: argument_properties(&arguments, &["description", "technology", "tags"]),
+            properties: Vec::new(),
+            perspectives: Vec::new(),
+            order,
             span: source_span.merge(end),
             source_span,
             destination_span,
         });
-        self.finish_statement("relationship");
+        if self.at(TokenTag::LeftBrace) {
+            if !self.open_block("relationship") {
+                return;
+            }
+            loop {
+                self.skip_newlines();
+                if self.at(TokenTag::RightBrace) {
+                    if let Some(end) = self.close_block("relationship") {
+                        self.workspace.relationships[index].span = source_span.merge(end.span);
+                    }
+                    break;
+                }
+                if self.at(TokenTag::Eof) {
+                    self.missing_closing_brace("relationship");
+                    break;
+                }
+                self.parse_relationship_property(index);
+            }
+        } else {
+            self.finish_statement("relationship");
+        }
+    }
+
+    fn parse_relationship_property(&mut self, index: usize) {
+        if self.at_keyword("description") {
+            if let Some(property) = self.parse_single_property("description") {
+                self.workspace.relationships[index].description = Some(property.value.clone());
+                self.workspace.relationships[index]
+                    .attributes
+                    .push(property);
+            }
+        } else if self.at_keyword("technology") {
+            if let Some(property) = self.parse_single_property("technology") {
+                self.workspace.relationships[index].technology = Some(property.value.clone());
+                self.workspace.relationships[index]
+                    .attributes
+                    .push(property);
+            }
+        } else if self.at_keyword("tag") {
+            if let Some(property) = self.parse_single_property("tag") {
+                self.workspace.relationships[index]
+                    .tags
+                    .push(property.value.clone());
+                self.workspace.relationships[index]
+                    .attributes
+                    .push(property);
+            }
+        } else if self.at_keyword("tags") {
+            if let Some(property) = self.parse_single_property("tags") {
+                self.workspace.relationships[index]
+                    .tags
+                    .extend(split_tags(&property.value));
+                self.workspace.relationships[index]
+                    .attributes
+                    .push(property);
+            }
+        } else if self.at_keyword("url") {
+            if let Some(property) = self.parse_single_property("url") {
+                self.workspace.relationships[index].url = Some(property.value.clone());
+                self.workspace.relationships[index]
+                    .attributes
+                    .push(property);
+            }
+        } else if self.at_keyword("properties") {
+            let properties = self.parse_property_block("properties");
+            self.workspace.relationships[index]
+                .properties
+                .extend(properties);
+        } else if self.at_keyword("perspectives") {
+            let perspectives = self.parse_property_block("perspectives");
+            self.workspace.relationships[index]
+                .perspectives
+                .extend(perspectives);
+        } else {
+            self.unknown_statement("relationship");
+        }
+    }
+
+    fn parse_removed_relationship(&mut self) {
+        let (source, source_span) = self.take_identifier().unwrap();
+        self.advance();
+        let Some((destination, destination_span)) = self.take_identifier() else {
+            self.error(
+                self.current().span,
+                "removed relationship destination is missing",
+                Some("add an element identifier after '-/>'"),
+            );
+            self.finish_statement("removed relationship");
+            return;
+        };
+        let description = self.take_value();
+        let end = description
+            .as_ref()
+            .map_or(destination_span, |value| value.1);
+        let order = self.next_order();
+        self.workspace
+            .removed_relationships
+            .push(RemovedRelationship {
+                source,
+                destination,
+                description: description
+                    .map(|value| value.0)
+                    .filter(|value| !value.is_empty()),
+                span: source_span.merge(end),
+                source_span,
+                destination_span,
+                order,
+            });
+        self.finish_statement("removed relationship");
+    }
+
+    fn parse_property_block(&mut self, label: &str) -> Vec<Property> {
+        self.advance();
+        if !self.open_block(label) {
+            return Vec::new();
+        }
+        let mut properties = Vec::new();
+        loop {
+            self.skip_newlines();
+            if self.at(TokenTag::RightBrace) {
+                self.close_block(label);
+                return properties;
+            }
+            if self.at(TokenTag::Eof) {
+                self.missing_closing_brace(label);
+                return properties;
+            }
+            let Some((key, key_span)) = self.take_value() else {
+                self.error(self.current().span, format!("{label} key is missing"), None);
+                self.skip_statement();
+                continue;
+            };
+            let Some((value, value_span)) = self.take_value() else {
+                self.error(
+                    key_span,
+                    format!("{label} value for '{key}' is missing"),
+                    None,
+                );
+                self.finish_statement(label);
+                continue;
+            };
+            properties.push(Property {
+                key,
+                value,
+                span: key_span.merge(value_span),
+            });
+            self.finish_statement(label);
+        }
+    }
+
+    fn parse_single_property(&mut self, label: &str) -> Option<Property> {
+        let start = self.advance();
+        let value = self.take_value();
+        if value.is_none() {
+            self.error(start.span, format!("{label} value is missing"), None);
+        }
+        self.finish_statement(label);
+        value.and_then(|(value, span)| {
+            (!value.is_empty()).then(|| Property {
+                key: label.into(),
+                value,
+                span: start.span.merge(span),
+            })
+        })
+    }
+
+    fn parse_directive(&mut self) -> Directive {
+        let start = self.advance();
+        let name = match &start.kind {
+            TokenKind::Bang(name) => name.clone(),
+            _ => unreachable!(),
+        };
+        let arguments = self.take_raw_arguments();
+        let mut span = start.span;
+        if self.at(TokenTag::LeftBrace) {
+            if let Some(end) = self.skip_preserved_block(&name) {
+                span = span.merge(end.span);
+            }
+        } else {
+            if let Some(previous) = self.tokens.get(self.index.saturating_sub(1)) {
+                span = span.merge(previous.span);
+            }
+            self.finish_statement(&name);
+        }
+        Directive {
+            name,
+            arguments,
+            span,
+        }
+    }
+
+    fn parse_unsafe_directive(&mut self) {
+        let directive = self.parse_directive();
+        self.error(
+            directive.span,
+            format!("!{} is disabled and was not executed", directive.name),
+            Some("remove executable directives; scripts and plugins are out of scope for M3"),
+        );
+        self.workspace.directives.push(directive);
+    }
+
+    fn parse_preserved(&mut self, name: &str) -> PreservedBlock {
+        let start = self.advance();
+        let arguments = self.take_raw_arguments();
+        let span = if self.at(TokenTag::LeftBrace) {
+            self.skip_preserved_block(name)
+                .map_or(start.span, |end| start.span.merge(end.span))
+        } else {
+            self.finish_statement(name);
+            start.span
+        };
+        PreservedBlock {
+            name: name.into(),
+            arguments,
+            span,
+        }
+    }
+
+    fn skip_preserved_block(&mut self, label: &str) -> Option<Token> {
+        if !self.open_block(label) {
+            return None;
+        }
+        let mut depth = 1usize;
+        while !self.at(TokenTag::Eof) {
+            if self.at(TokenTag::LeftBrace) {
+                depth += 1;
+                self.advance();
+            } else if self.at(TokenTag::RightBrace) {
+                if depth == 1 {
+                    return self.close_block(label);
+                }
+                depth -= 1;
+                self.advance();
+            } else {
+                self.advance();
+            }
+        }
+        self.missing_closing_brace(label);
+        None
+    }
+
+    fn warn_deferred(&mut self, directive: &Directive, message: &str) {
+        self.workspace.warnings.push(
+            Diagnostic::warning(directive.span, format!("!{}: {message}", directive.name))
+                .with_help(
+                    "the source construct was preserved without executing deferred behavior",
+                ),
+        );
+    }
+
+    fn warn_preserved(&mut self, preserved: &PreservedBlock, message: &str) {
+        self.workspace.warnings.push(
+            Diagnostic::warning(preserved.span, format!("{}: {message}", preserved.name))
+                .with_help("the source block was preserved for a later milestone"),
+        );
     }
 
     fn parse_views(&mut self) {
@@ -374,16 +898,15 @@ impl Parser {
             );
         }
         let arguments = self.take_values();
-        if arguments.len() > 2 {
-            self.error(
-                arguments[2].1,
-                "view accepts at most a key and description after its scope",
-                None,
-            );
-        }
+        self.limit_arguments(
+            &arguments,
+            2,
+            "view accepts at most a key and description after its scope",
+        );
         if !self.open_block("view") {
             return;
         }
+        let order = self.next_order();
         let mut view = View {
             kind,
             scope: scope.as_ref().map(|scope| scope.0.clone()),
@@ -393,6 +916,7 @@ impl Parser {
             excludes: Vec::new(),
             auto_layout: None,
             title: None,
+            order,
             span: start.span,
             scope_span: scope.as_ref().map(|scope| scope.1),
         };
@@ -496,6 +1020,41 @@ impl Parser {
         }
     }
 
+    fn take_raw_arguments(&mut self) -> Vec<String> {
+        let mut arguments = Vec::new();
+        while !self.at(TokenTag::LeftBrace)
+            && !self.at(TokenTag::RightBrace)
+            && !self.at(TokenTag::Newline)
+            && !self.at(TokenTag::Eof)
+        {
+            arguments.push(token_text(&self.advance().kind));
+        }
+        arguments
+    }
+
+    fn qualify_identifier(&self, identifier: String) -> String {
+        if self.workspace.identifiers == "hierarchical" {
+            self.parent_stack
+                .last()
+                .map(|parent| format!("{parent}.{identifier}"))
+                .unwrap_or(identifier)
+        } else {
+            identifier
+        }
+    }
+
+    fn next_order(&mut self) -> usize {
+        let order = self.order;
+        self.order += 1;
+        order
+    }
+
+    fn limit_arguments(&mut self, arguments: &[(String, Span)], maximum: usize, message: &str) {
+        if arguments.len() > maximum {
+            self.error(arguments[maximum].1, message, None);
+        }
+    }
+
     fn open_block(&mut self, label: &str) -> bool {
         if self.at(TokenTag::LeftBrace) {
             self.advance();
@@ -578,7 +1137,7 @@ impl Parser {
         self.error(
             token.span,
             format!("unknown {context} statement '{}'", token_text(&token.kind)),
-            Some("M2 accepts only the Milestone 1 language subset"),
+            Some("this feature is not part of the M3 core grammar"),
         );
         self.skip_statement();
     }
@@ -599,8 +1158,8 @@ impl Parser {
         }
     }
 
-    fn relationship_ahead(&self) -> bool {
-        self.identifier_ahead() && self.nth_at(1, TokenTag::Arrow)
+    fn relationship_ahead(&self, arrow: TokenTag) -> bool {
+        self.identifier_ahead() && self.nth_at(1, arrow)
     }
 
     fn identifier_ahead(&self) -> bool {
@@ -617,6 +1176,10 @@ impl Parser {
 
     fn at_bang(&self, keyword: &str) -> bool {
         matches!(&self.current().kind, TokenKind::Bang(value) if value.eq_ignore_ascii_case(keyword))
+    }
+
+    fn at_any_bang(&self, keywords: &[&str]) -> bool {
+        keywords.iter().any(|keyword| self.at_bang(keyword))
     }
 
     fn at(&self, tag: TokenTag) -> bool {
@@ -670,6 +1233,7 @@ enum TokenTag {
     RightBrace,
     Equals,
     Arrow,
+    RemoveArrow,
     Star,
     Newline,
     Eof,
@@ -683,6 +1247,7 @@ fn token_is(kind: &TokenKind, tag: TokenTag) -> bool {
             | (TokenKind::RightBrace, TokenTag::RightBrace)
             | (TokenKind::Equals, TokenTag::Equals)
             | (TokenKind::Arrow, TokenTag::Arrow)
+            | (TokenKind::RemoveArrow, TokenTag::RemoveArrow)
             | (TokenKind::Star, TokenTag::Star)
             | (TokenKind::Newline, TokenTag::Newline)
             | (TokenKind::Eof, TokenTag::Eof)
@@ -693,6 +1258,131 @@ fn optional_argument(argument: Option<&(String, Span)>) -> Option<String> {
     argument
         .map(|argument| argument.0.clone())
         .filter(|argument| !argument.is_empty())
+}
+
+fn argument_properties(arguments: &[(String, Span)], names: &[&str]) -> Vec<Property> {
+    arguments
+        .iter()
+        .zip(names)
+        .filter(|((value, _), _)| !value.is_empty())
+        .map(|((value, span), name)| Property {
+            key: (*name).into(),
+            value: value.clone(),
+            span: *span,
+        })
+        .collect()
+}
+
+fn element_argument_properties(kind: &ElementKind, arguments: &[(String, Span)]) -> Vec<Property> {
+    let names: &[&str] = match kind {
+        ElementKind::Person | ElementKind::SoftwareSystem => &["name", "description", "tags"],
+        ElementKind::Container | ElementKind::Component | ElementKind::InfrastructureNode => {
+            &["name", "description", "technology", "tags"]
+        }
+        ElementKind::Generic => &["name", "type", "description", "technology", "tags"],
+        ElementKind::DeploymentNode => &["name", "description", "technology", "instances", "tags"],
+        ElementKind::SoftwareSystemInstance | ElementKind::ContainerInstance => {
+            &["reference", "deploymentGroups", "tags"]
+        }
+        ElementKind::DeploymentEnvironment | ElementKind::DeploymentGroup => &["name"],
+    };
+    argument_properties(arguments, names)
+}
+
+struct InlineProperties {
+    description: Option<String>,
+    technology: Option<String>,
+    tags: Vec<String>,
+    instances: Option<String>,
+    element_type: Option<String>,
+    deployment_groups: Vec<Reference>,
+}
+
+fn inline_properties(kind: &ElementKind, arguments: &[(String, Span)]) -> InlineProperties {
+    let values = match kind {
+        ElementKind::Person | ElementKind::SoftwareSystem => (
+            optional_argument(arguments.get(1)),
+            None,
+            optional_argument(arguments.get(2))
+                .map(|value| split_tags(&value))
+                .unwrap_or_default(),
+            None,
+            None,
+            Vec::new(),
+        ),
+        ElementKind::Container | ElementKind::Component | ElementKind::InfrastructureNode => (
+            optional_argument(arguments.get(1)),
+            optional_argument(arguments.get(2)),
+            optional_argument(arguments.get(3))
+                .map(|value| split_tags(&value))
+                .unwrap_or_default(),
+            None,
+            None,
+            Vec::new(),
+        ),
+        ElementKind::Generic => (
+            optional_argument(arguments.get(2)),
+            optional_argument(arguments.get(3)),
+            optional_argument(arguments.get(4))
+                .map(|value| split_tags(&value))
+                .unwrap_or_default(),
+            None,
+            optional_argument(arguments.get(1)),
+            Vec::new(),
+        ),
+        ElementKind::DeploymentNode => (
+            optional_argument(arguments.get(1)),
+            optional_argument(arguments.get(2)),
+            optional_argument(arguments.get(4))
+                .map(|value| split_tags(&value))
+                .unwrap_or_default(),
+            optional_argument(arguments.get(3)),
+            None,
+            Vec::new(),
+        ),
+        ElementKind::SoftwareSystemInstance | ElementKind::ContainerInstance => (
+            None,
+            None,
+            optional_argument(arguments.get(2))
+                .map(|value| split_tags(&value))
+                .unwrap_or_default(),
+            None,
+            None,
+            arguments
+                .get(1)
+                .map(|(groups, span)| {
+                    split_tags(groups)
+                        .into_iter()
+                        .map(|identifier| Reference {
+                            identifier,
+                            span: *span,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+        ),
+        ElementKind::DeploymentEnvironment | ElementKind::DeploymentGroup => {
+            (None, None, Vec::new(), None, None, Vec::new())
+        }
+    };
+    InlineProperties {
+        description: values.0,
+        technology: values.1,
+        tags: values.2,
+        instances: values.3,
+        element_type: values.4,
+        deployment_groups: values.5,
+    }
+}
+
+fn maximum_arguments(kind: &ElementKind) -> usize {
+    match kind {
+        ElementKind::Person | ElementKind::SoftwareSystem => 3,
+        ElementKind::Container | ElementKind::Component | ElementKind::InfrastructureNode => 4,
+        ElementKind::Generic | ElementKind::DeploymentNode => 5,
+        ElementKind::SoftwareSystemInstance | ElementKind::ContainerInstance => 3,
+        ElementKind::DeploymentEnvironment | ElementKind::DeploymentGroup => 1,
+    }
 }
 
 fn split_tags(tags: &str) -> Vec<String> {
@@ -717,6 +1407,13 @@ fn element_label(kind: &ElementKind) -> &'static str {
         ElementKind::SoftwareSystem => "software system",
         ElementKind::Container => "container",
         ElementKind::Component => "component",
+        ElementKind::Generic => "element",
+        ElementKind::DeploymentEnvironment => "deployment environment",
+        ElementKind::DeploymentGroup => "deployment group",
+        ElementKind::DeploymentNode => "deployment node",
+        ElementKind::InfrastructureNode => "infrastructure node",
+        ElementKind::SoftwareSystemInstance => "software system instance",
+        ElementKind::ContainerInstance => "container instance",
     }
 }
 
@@ -736,6 +1433,7 @@ fn token_text(kind: &TokenKind) -> String {
         TokenKind::RightBrace => "}".into(),
         TokenKind::Equals => "=".into(),
         TokenKind::Arrow => "->".into(),
+        TokenKind::RemoveArrow => "-/>".into(),
         TokenKind::Star => "*".into(),
         TokenKind::Newline => "newline".into(),
         TokenKind::Eof => "end of file".into(),

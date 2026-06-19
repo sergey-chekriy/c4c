@@ -19,7 +19,15 @@ fn run() -> Result<(), String> {
     }
     let cmd = &args[1];
     let input = &args[2];
-    let ws = compiler::compile_file(input)?;
+    let allow_network = args.iter().any(|arg| arg == "--allow-network");
+    let ws = if allow_network {
+        compiler::compile_file_with_options(input, compiler::CompileOptions { allow_network })?
+    } else {
+        compiler::compile_file(input)?
+    };
+    if let Some(warnings) = compiler::warnings(&ws) {
+        eprintln!("{warnings}");
+    }
     match cmd.as_str() {
         "validate" => {
             compiler::validate(&ws)?;
@@ -59,7 +67,7 @@ fn arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
 
 fn usage() -> Result<(), String> {
     Err(
-        "usage: c4c <validate|inspect|export> <workspace.dsl> [--format mermaid] [--out out]"
+        "usage: c4c <validate|inspect|export> <workspace.dsl> [--format mermaid] [--out out] [--allow-network]"
             .into(),
     )
 }

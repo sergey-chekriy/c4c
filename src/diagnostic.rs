@@ -5,6 +5,13 @@ pub struct Diagnostic {
     pub span: Span,
     pub message: String,
     pub help: Option<String>,
+    severity: Severity,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Severity {
+    Error,
+    Warning,
 }
 
 impl Diagnostic {
@@ -13,6 +20,16 @@ impl Diagnostic {
             span,
             message: message.into(),
             help: None,
+            severity: Severity::Error,
+        }
+    }
+
+    pub fn warning(span: Span, message: impl Into<String>) -> Self {
+        Self {
+            span,
+            message: message.into(),
+            help: None,
+            severity: Severity::Warning,
         }
     }
 
@@ -35,8 +52,12 @@ impl Diagnostic {
             .count()
             .max(1);
         let number_width = line.to_string().len();
+        let severity = match self.severity {
+            Severity::Error => "error",
+            Severity::Warning => "warning",
+        };
         let mut out = format!(
-            "{}:{line}:{column}: error: {}\n  {line:>number_width$} | {text}\n  {:number_width$} | {}{}",
+            "{}:{line}:{column}: {severity}: {}\n  {line:>number_width$} | {text}\n  {:number_width$} | {}{}",
             source.path.display(),
             self.message,
             "",
