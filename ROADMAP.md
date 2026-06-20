@@ -57,6 +57,12 @@ Support JSON, Mermaid, D2, PlantUML, C4-PlantUML, DOT, SVG/PNG, Draw.io, ArchiMa
 Status: implemented with deterministic text exporters, M7 site delegation, a conservative
 ArchiMate 3.0 exchange mapping, and explicit local-only Graphviz rendering policy.
 
+## M8.1 — Archi native exporter
+
+Status: implemented with deterministic native `.archimate` XML, folders, elements,
+relationships, diagram views, diagram objects, and connections. This Archi-specific format
+is separate from the Open Group `archimate` exchange exporter.
+
 ## M9 — compatibility suite
 
 Add fixture coverage for every language construct and compare outputs against expected snapshots.

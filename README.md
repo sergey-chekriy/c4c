@@ -31,6 +31,7 @@ Implemented in this repo:
 - Safe local Markdown/AsciiDoc and ADR import attached to workspaces, software systems, and containers.
 - Deterministic local static documentation sites with escaped HTML and raw Mermaid artifacts.
 - Deterministic JSON, Mermaid, D2, PlantUML, C4-PlantUML, Graphviz DOT, Draw.io, ArchiMate, and HTML exporters.
+- Archi-native `.archimate` export with editable diagram views.
 - Optional SVG/PNG generation through an explicitly requested local Graphviz renderer.
 
 
@@ -89,6 +90,12 @@ Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
 - `--format html` delegates to the M7 static site generator without changing `docs` behavior.
 - SVG/PNG use only the local Graphviz `dot` executable and are rejected by `--strict-safe`.
 
+## Milestone 8.1 additions
+
+- Native Archi 5 XML with standard folders, mapped elements and relationships, and one editable diagram per c4c view.
+- Deterministic diagram objects, grid bounds, and connections without executing Archi or another renderer.
+- Separate `archi` aliases preserve the standards-oriented Open Group `archimate` exporter.
+
 ## Build
 
 ```bash
@@ -135,6 +142,7 @@ cargo run -- export examples/internet-banking.dsl --format c4plantuml --out out-
 cargo run -- export examples/internet-banking.dsl --format dot --out out-dot
 cargo run -- export examples/internet-banking.dsl --format drawio --out out-drawio
 cargo run -- export examples/internet-banking.dsl --format archimate --out out-archimate
+cargo run -- export examples/internet-banking.dsl --format archi --out out-archi
 cargo run -- export tests/fixtures/m7-docs.dsl --format html --out out-html
 cargo run -- docs tests/fixtures/m7-docs.dsl --out site
 cargo run -- adr list tests/fixtures/m7-docs.dsl
@@ -213,6 +221,7 @@ Text exports require no renderer or network access:
 | `dot`, `graphviz` | `<view-key>.dot` |
 | `drawio`, `draw.io` | `<view-key>.drawio` |
 | `archimate`, `archimate-xml`, `opengroup-archimate` | `workspace.archimate.xml` |
+| `archi`, `archi-native`, `archimate-native` | `workspace.archimate` native Archi XML with editable diagrams |
 | `html`, `site` | M7 static site |
 
 The JSON output is a documented Structurizr-compatible subset; the `c4c` object preserves
@@ -221,6 +230,12 @@ ArchiMate export is a pragmatic exchange mapping, not full semantic equivalence:
 to `BusinessActor`, C4 software concepts to `ApplicationComponent`, deployment/infrastructure
 nodes to `Node`, generic/deployment grouping concepts to `Grouping`, and relationships to the
 conservative `Association` type. ArchiMate visual views are deferred.
+
+`archimate` exports Open Group ArchiMate Model Exchange XML for standards-based interchange.
+`archi` exports Archi's native, Archi-specific `.archimate` XML so Archi can open the model
+directly with editable grid-laid-out diagram views. Native metadata properties, boundaries,
+and advanced manual layout are deferred; use the Open Group export when preserved `c4c.*`
+properties are more important than native diagrams.
 
 `svg` and `png` explicitly run the local Graphviz `dot` binary. If it is absent, c4c reports an
 installation hint and does not contact a remote service. `--strict-safe` rejects all renderer
@@ -235,6 +250,7 @@ The project should remain local-first:
 - No remote rendering.
 - No cloud dependency.
 - Text exporters never execute external binaries; SVG/PNG may execute only local Graphviz after an explicit request.
+- Archi native export is text-only and remains available under `--strict-safe`.
 - Remote `!include <url>` is rejected without making a request; `--allow-network` is parsed but fetching remains unimplemented.
 - `--strict-safe` rejects remote assets and executable directives.
 - Documentation imports are confined below the declaring DSL file and never load custom classes or remote content.

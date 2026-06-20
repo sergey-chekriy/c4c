@@ -23,6 +23,7 @@ enum ExportFormat {
     Dot,
     DrawIo,
     ArchiMate,
+    ArchiNative,
     Html,
     Svg,
     Png,
@@ -57,6 +58,7 @@ pub fn export(
         ExportFormat::Dot => view_artifacts(workspace, "dot", dot),
         ExportFormat::DrawIo => view_artifacts(workspace, "drawio", drawio),
         ExportFormat::ArchiMate => vec![artifact("workspace.archimate.xml", archimate(workspace))],
+        ExportFormat::ArchiNative => vec![artifact("workspace.archimate", archi_native(workspace))],
         _ => unreachable!(),
     };
     write_artifacts(output, artifacts)
@@ -73,11 +75,12 @@ impl ExportFormat {
             "dot" | "graphviz" => Ok(Self::Dot),
             "drawio" | "draw.io" => Ok(Self::DrawIo),
             "archimate" | "archimate-xml" | "opengroup-archimate" => Ok(Self::ArchiMate),
+            "archi" | "archi-native" | "archimate-native" => Ok(Self::ArchiNative),
             "html" | "site" => Ok(Self::Html),
             "svg" => Ok(Self::Svg),
             "png" => Ok(Self::Png),
             _ => Err(format!(
-                "unsupported export format '{value}'; supported: json, mermaid, d2, plantuml, c4plantuml, dot, drawio, archimate, html, svg, png"
+                "unsupported export format '{value}'; supported: json, mermaid, d2, plantuml, c4plantuml, dot, drawio, archimate, archi, html, svg, png"
             )),
         }
     }
@@ -533,6 +536,251 @@ fn archimate_type(kind: &ElementKind) -> &'static str {
         | ElementKind::Component
         | ElementKind::SoftwareSystemInstance
         | ElementKind::ContainerInstance => "ApplicationComponent",
+    }
+}
+
+fn archi_native(workspace: &Workspace) -> String {
+    const FOLDERS: &[(&str, &str)] = &[
+        ("Strategy", "strategy"),
+        ("Business", "business"),
+        ("Application", "application"),
+        ("Technology & Physical", "technology"),
+        ("Motivation", "motivation"),
+        ("Implementation & Migration", "implementation_migration"),
+        ("Other", "other"),
+        ("Relations", "relations"),
+        ("Views", "diagrams"),
+    ];
+    let mut output = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<archimate:model xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:archimate=\"http://www.archimatetool.com/archimate\" name=\"{}\" id=\"id-c4c-model\" version=\"5.0.0\">\n",
+        xml_attr(workspace.name.as_deref().unwrap_or("Workspace"))
+    );
+    for (name, folder_type) in FOLDERS {
+        output.push_str(&format!(
+            "  <folder name=\"{}\" id=\"id-c4c-folder-{folder_type}\" type=\"{folder_type}\">\n",
+            xml_attr(name)
+        ));
+        for element in workspace
+            .elements
+            .iter()
+            .filter(|element| archi_native_folder(&element.kind) == *folder_type)
+        {
+            output.push_str(&format!(
+                "    <element xsi:type=\"archimate:{}\" name=\"{}\" id=\"{}\"",
+                archi_native_type(&element.kind),
+                xml_attr(&element.name),
+                archi_native_element_id(&element.id)
+            ));
+            if let Some(description) = &element.description {
+                output.push_str(&format!(
+                    ">\n      <documentation>{}</documentation>\n    </element>\n",
+                    xml_text(description)
+                ));
+            } else {
+                output.push_str("/>\n");
+            }
+        }
+        if *folder_type == "relations" {
+            append_archi_native_relationships(&mut output, workspace);
+        } else if *folder_type == "diagrams" {
+            append_archi_native_views(&mut output, workspace);
+        }
+        output.push_str("  </folder>\n");
+    }
+    output.push_str("</archimate:model>\n");
+    output
+}
+
+fn append_archi_native_relationships(output: &mut String, workspace: &Workspace) {
+    for (index, relationship) in workspace.relationships.iter().enumerate() {
+        append_archi_native_relationship(
+            output,
+            &archi_native_relationship_id(index),
+            &relationship.source,
+            &relationship.destination,
+            relationship.description.as_deref(),
+        );
+    }
+    for view in &workspace.views {
+        let graph = compiler::view_graph(workspace, view);
+        for (position, relationship) in graph.relationships.iter().enumerate() {
+            let (id, synthetic) =
+                archi_native_view_relationship_id(workspace, view, relationship, position);
+            if synthetic {
+                append_archi_native_relationship(
+                    output,
+                    &id,
+                    &relationship.source,
+                    &relationship.destination,
+                    Some(&relationship.description),
+                );
+            }
+        }
+    }
+}
+
+fn append_archi_native_relationship(
+    output: &mut String,
+    id: &str,
+    source: &str,
+    destination: &str,
+    description: Option<&str>,
+) {
+    output.push_str(&format!(
+        "    <element xsi:type=\"archimate:TriggeringRelationship\" id=\"{}\" source=\"{}\" target=\"{}\"",
+        xml_attr(id),
+        archi_native_element_id(source),
+        archi_native_element_id(destination)
+    ));
+    if let Some(description) = description.filter(|description| !description.is_empty()) {
+        output.push_str(&format!(" name=\"{}\"", xml_attr(description)));
+    }
+    output.push_str("/>\n");
+}
+
+fn append_archi_native_views(output: &mut String, workspace: &Workspace) {
+    for view in &workspace.views {
+        let graph = compiler::view_graph(workspace, view);
+        let key = safe_name(view_key(view));
+        output.push_str(&format!(
+            "    <element xsi:type=\"archimate:ArchimateDiagramModel\" name=\"{}\" id=\"id-c4c-view-{key}\" connectionRouterType=\"2\">\n",
+            xml_attr(view.title.as_deref().unwrap_or(view_key(view)))
+        ));
+        for (position, identifier) in graph.element_ids.iter().enumerate() {
+            let Some(element) = find(workspace, identifier) else {
+                continue;
+            };
+            let object_id = archi_native_object_id(&key, identifier);
+            output.push_str(&format!(
+                "      <child xsi:type=\"archimate:DiagramObject\" id=\"{object_id}\" archimateElement=\"{}\" type=\"1\" fillColor=\"{}\">\n",
+                archi_native_element_id(identifier),
+                archi_native_fill(&element.kind)
+            ));
+            let (x, y) = archi_native_position(view, position);
+            output.push_str(&format!(
+                "        <bounds x=\"{x}\" y=\"{y}\" width=\"180\" height=\"80\"/>\n"
+            ));
+            for (relationship_position, relationship) in graph
+                .relationships
+                .iter()
+                .enumerate()
+                .filter(|(_, relationship)| relationship.source == *identifier)
+            {
+                let (relationship_id, _) = archi_native_view_relationship_id(
+                    workspace,
+                    view,
+                    relationship,
+                    relationship_position,
+                );
+                output.push_str(&format!(
+                    "        <sourceConnection xsi:type=\"archimate:Connection\" id=\"id-c4c-connection-{key}-{}\" source=\"{object_id}\" target=\"{}\" archimateRelationship=\"{relationship_id}\"/>\n",
+                    relationship_position + 1,
+                    archi_native_object_id(&key, &relationship.destination)
+                ));
+            }
+            output.push_str("      </child>\n");
+        }
+        output.push_str("    </element>\n");
+    }
+}
+
+fn archi_native_view_relationship_id(
+    workspace: &Workspace,
+    view: &View,
+    relationship: &compiler::ViewGraphRelationship,
+    position: usize,
+) -> (String, bool) {
+    let exact = relationship.relationship_index.filter(|index| {
+        let model = &workspace.relationships[*index];
+        model.source == relationship.source && model.destination == relationship.destination
+    });
+    let exact = exact.or_else(|| {
+        workspace.relationships.iter().position(|model| {
+            model.source == relationship.source && model.destination == relationship.destination
+        })
+    });
+    exact.map_or_else(
+        || {
+            (
+                format!(
+                    "id-c4c-relationship-view-{}-{}",
+                    safe_name(view_key(view)),
+                    position + 1
+                ),
+                true,
+            )
+        },
+        |index| (archi_native_relationship_id(index), false),
+    )
+}
+
+fn archi_native_position(view: &View, position: usize) -> (usize, usize) {
+    // ponytail: stable grid first; add boundary-aware layout only when manual use demands it.
+    let vertical = view.auto_layout.as_ref().is_some_and(|layout| {
+        matches!(layout.direction.to_ascii_lowercase().as_str(), "tb" | "bt")
+    });
+    let (column, row) = if vertical {
+        (position / 4, position % 4)
+    } else {
+        (position % 4, position / 4)
+    };
+    (40 + column * 260, 40 + row * 160)
+}
+
+fn archi_native_element_id(identifier: &str) -> String {
+    format!("id-c4c-element-{}", safe_name(identifier))
+}
+
+fn archi_native_relationship_id(index: usize) -> String {
+    format!("id-c4c-relationship-{}", index + 1)
+}
+
+fn archi_native_object_id(view_key: &str, identifier: &str) -> String {
+    format!(
+        "id-c4c-viewobject-{}-{}",
+        safe_name(view_key),
+        safe_name(identifier)
+    )
+}
+
+fn archi_native_folder(kind: &ElementKind) -> &'static str {
+    match kind {
+        ElementKind::Person => "business",
+        ElementKind::SoftwareSystem
+        | ElementKind::Container
+        | ElementKind::Component
+        | ElementKind::SoftwareSystemInstance
+        | ElementKind::ContainerInstance => "application",
+        ElementKind::DeploymentNode | ElementKind::InfrastructureNode => "technology",
+        ElementKind::Generic
+        | ElementKind::DeploymentEnvironment
+        | ElementKind::DeploymentGroup => "other",
+    }
+}
+
+fn archi_native_type(kind: &ElementKind) -> &'static str {
+    match kind {
+        ElementKind::Person => "BusinessActor",
+        ElementKind::SoftwareSystem
+        | ElementKind::Container
+        | ElementKind::Component
+        | ElementKind::SoftwareSystemInstance
+        | ElementKind::ContainerInstance => "ApplicationComponent",
+        ElementKind::DeploymentNode | ElementKind::InfrastructureNode => "Node",
+        ElementKind::Generic
+        | ElementKind::DeploymentEnvironment
+        | ElementKind::DeploymentGroup => "Grouping",
+    }
+}
+
+fn archi_native_fill(kind: &ElementKind) -> &'static str {
+    match kind {
+        ElementKind::Person => "#ffffb5",
+        ElementKind::DeploymentNode | ElementKind::InfrastructureNode => "#c9d9ff",
+        ElementKind::Generic
+        | ElementKind::DeploymentEnvironment
+        | ElementKind::DeploymentGroup => "#eeeeee",
+        _ => "#b5ffff",
     }
 }
 
@@ -1159,7 +1407,7 @@ fn append_style_note(workspace: &Workspace, output: &mut String, comment: &str) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compiler::{compile_file, validate};
+    use crate::compiler::{compile_file, compile_file_with_options, validate, CompileOptions};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
@@ -1257,6 +1505,88 @@ mod tests {
         assert!(archimate.contains("xsi:type=\"Association\""));
         assert!(archimate.contains("User &lt;Admin&gt; &amp; Owner"));
         assert!(archimate.contains("c4c.id"));
+    }
+
+    #[test]
+    fn exports_deterministic_archi_native_models_with_editable_views() {
+        let workspace = compile_file_with_options(
+            "tests/fixtures/m8-exporters.dsl",
+            CompileOptions {
+                allow_network: false,
+                strict_safe: true,
+            },
+        )
+        .unwrap();
+        validate(&workspace).unwrap();
+        let native = archi_native(&workspace);
+        assert_eq!(native, archi_native(&workspace));
+        assert!(native.contains("xmlns:archimate=\"http://www.archimatetool.com/archimate\""));
+        assert!(native.contains("version=\"5.0.0\""));
+        for folder in [
+            "strategy",
+            "business",
+            "application",
+            "technology",
+            "motivation",
+            "implementation_migration",
+            "other",
+            "relations",
+            "diagrams",
+        ] {
+            assert!(native.contains(&format!("type=\"{folder}\"")));
+        }
+        for native_type in [
+            "BusinessActor",
+            "ApplicationComponent",
+            "Node",
+            "Grouping",
+            "TriggeringRelationship",
+            "ArchimateDiagramModel",
+            "DiagramObject",
+            "Connection",
+        ] {
+            assert!(native.contains(&format!("xsi:type=\"archimate:{native_type}\"")));
+        }
+        assert_eq!(
+            native
+                .matches("xsi:type=\"archimate:ArchimateDiagramModel\"")
+                .count(),
+            workspace.views.len()
+        );
+        assert!(native.contains("<bounds x=\"40\" y=\"40\" width=\"180\" height=\"80\"/>"));
+        assert!(native.contains("<sourceConnection xsi:type=\"archimate:Connection\""));
+        assert!(native.contains("Milestone 8 &lt;Exporters&gt; &amp; Exchange"));
+        assert!(native.contains("User &lt;Admin&gt; &amp; Owner"));
+
+        let output = temporary_directory("archi-native");
+        for format in ["archi", "archi-native", "archimate-native"] {
+            export(
+                &workspace,
+                format,
+                &output,
+                ExportOptions { strict_safe: true },
+            )
+            .unwrap();
+            assert_eq!(
+                fs::read_to_string(output.join("workspace.archimate")).unwrap(),
+                native
+            );
+        }
+        let open_group = archimate(&workspace);
+        export(
+            &workspace,
+            "archimate",
+            &output,
+            ExportOptions { strict_safe: true },
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(output.join("workspace.archimate.xml")).unwrap(),
+            open_group
+        );
+        assert!(open_group.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.0/\""));
+        assert!(!open_group.contains("ArchimateDiagramModel"));
+        fs::remove_dir_all(output).unwrap();
     }
 
     #[test]

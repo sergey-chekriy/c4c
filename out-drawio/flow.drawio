@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="c4c" version="M8"><diagram id="flow" name="flow"><mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" page="1" pageWidth="1169" pageHeight="827"><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+<mxCell id="element-1" value="User &lt;Admin&gt; &amp; Owner&#10;Person" style="rounded=1;whiteSpace=wrap;html=0;" vertex="1" parent="1"><mxGeometry x="40" y="40" width="180" height="80" as="geometry"/></mxCell>
+<mxCell id="element-3" value="API &lt;Gateway&gt;&#10;Container" style="rounded=1;whiteSpace=wrap;html=0;" vertex="1" parent="1"><mxGeometry x="260" y="40" width="180" height="80" as="geometry"/></mxCell>
+<mxCell id="element-5" value="External Ledger&#10;SoftwareSystem" style="rounded=1;whiteSpace=wrap;html=0;" vertex="1" parent="1"><mxGeometry x="480" y="40" width="180" height="80" as="geometry"/></mxCell>
+<mxCell id="edge-dynamic-1" value="Open orders" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;" edge="1" parent="1" source="element-1" target="element-3"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="edge-dynamic-2" value="Post entry" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=0;endArrow=block;" edge="1" parent="1" source="element-3" target="element-5"><mxGeometry relative="1" as="geometry"/></mxCell>
+</root></mxGraphModel></diagram></mxfile>

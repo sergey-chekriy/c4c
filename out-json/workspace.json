@@ -1,12 +1,12 @@
 {
-  "name": "Internet Banking",
-  "description": "Milestone 1 example",
+  "name": "Milestone 8 <Exporters> & Exchange",
+  "description": "Deterministic local formats",
   "model": {
     "people": [
       {
-        "id": "customer",
-        "name": "Customer",
-        "description": "A bank customer",
+        "id": "user",
+        "name": "User <Admin> & Owner",
+        "description": "Exercises exporter escaping",
         "technology": null,
         "parentId": null,
         "tags": "",
@@ -16,9 +16,9 @@
     ],
     "softwareSystems": [
       {
-        "id": "bank",
-        "name": "Internet Banking System",
-        "description": "Allows customers to view accounts and make payments",
+        "id": "system",
+        "name": "Orders & Payments",
+        "description": "Primary application",
         "technology": null,
         "parentId": null,
         "tags": "",
@@ -26,122 +26,199 @@
         "properties": [],
         "containers": [
           {
-            "id": "bank.web",
-            "name": "Web Application",
-            "description": "Customer-facing SPA",
-            "technology": "React",
-            "parentId": "bank",
-            "tags": "",
-            "kind": "Container",
-            "properties": [],
-            "components": []
-          },
-          {
-            "id": "bank.api",
-            "name": "API Application",
+            "id": "system.api",
+            "name": "API <Gateway>",
             "description": "Backend API",
             "technology": "Rust",
-            "parentId": "bank",
+            "parentId": "system",
             "tags": "",
             "kind": "Container",
             "properties": [],
-            "components": []
-          },
-          {
-            "id": "bank.db",
-            "name": "Database",
-            "description": "Stores audit/profile data",
-            "technology": "PostgreSQL",
-            "parentId": "bank",
-            "tags": "",
-            "kind": "Container",
-            "properties": [],
-            "components": []
+            "components": [
+              {
+                "id": "system.api.handler",
+                "name": "Order Handler",
+                "description": "Handles orders",
+                "technology": "Rust",
+                "parentId": "system.api",
+                "tags": "",
+                "kind": "Component",
+                "properties": []
+              }
+            ]
           }
         ]
+      },
+      {
+        "id": "external",
+        "name": "External Ledger",
+        "description": null,
+        "technology": null,
+        "parentId": null,
+        "tags": "",
+        "kind": "SoftwareSystem",
+        "properties": [],
+        "containers": []
       }
     ],
-    "deploymentElements": [],
+    "deploymentElements": [
+      {
+        "id": "production",
+        "name": "Production",
+        "description": null,
+        "technology": null,
+        "parentId": null,
+        "tags": "",
+        "kind": "DeploymentEnvironment",
+        "properties": []
+      },
+      {
+        "id": "production.node",
+        "name": "Primary Node",
+        "description": "Local host",
+        "technology": "Linux",
+        "parentId": "production",
+        "tags": "",
+        "kind": "DeploymentNode",
+        "properties": []
+      },
+      {
+        "id": "production.node.apiInstance",
+        "name": "system.api",
+        "description": null,
+        "technology": null,
+        "parentId": "production.node",
+        "tags": "",
+        "kind": "ContainerInstance",
+        "properties": []
+      }
+    ],
     "relationships": [
       {
         "id": "1",
-        "sourceId": "customer",
-        "destinationId": "bank.web",
-        "description": "Uses",
-        "technology": null,
+        "sourceId": "user",
+        "destinationId": "system.api",
+        "description": "Uses <securely> & safely",
+        "technology": "HTTPS",
         "tags": "",
         "properties": []
       },
       {
         "id": "2",
-        "sourceId": "bank.web",
-        "destinationId": "bank.api",
-        "description": "Calls",
-        "technology": "HTTPS/JSON",
+        "sourceId": "system.api",
+        "destinationId": "external",
+        "description": "Posts entries",
+        "technology": "JSON",
         "tags": "",
         "properties": []
       },
       {
         "id": "3",
-        "sourceId": "bank.api",
-        "destinationId": "bank.db",
-        "description": "Reads/writes",
-        "technology": "SQL",
+        "sourceId": "system.api.handler",
+        "destinationId": "external",
+        "description": "Posts entries",
+        "technology": "JSON",
         "tags": "",
         "properties": []
       }
     ]
   },
   "views": {
-    "systemLandscapeViews": [],
-    "systemContextViews": [
+    "systemLandscapeViews": [
       {
-        "key": "system-context",
-        "scope": "bank",
-        "description": "System Context diagram",
-        "title": "Internet Banking - System Context",
+        "key": "landscape",
+        "scope": null,
+        "description": null,
+        "title": null,
         "elements": [
           {
-            "id": "customer"
+            "id": "user"
           },
           {
-            "id": "bank"
+            "id": "system"
+          },
+          {
+            "id": "external"
+          }
+        ],
+        "relationships": []
+      }
+    ],
+    "systemContextViews": [
+      {
+        "key": "context",
+        "scope": "system",
+        "description": null,
+        "title": null,
+        "elements": [
+          {
+            "id": "user"
+          },
+          {
+            "id": "system"
+          },
+          {
+            "id": "external"
           }
         ],
         "relationships": [
           {
             "id": "1"
+          },
+          {
+            "id": "2"
           }
         ]
       }
     ],
     "containerViews": [
       {
-        "key": "container",
-        "scope": "bank",
-        "description": "Container diagram",
-        "title": "Internet Banking - Containers",
+        "key": "containers",
+        "scope": "system",
+        "description": null,
+        "title": null,
         "elements": [
           {
-            "id": "customer"
+            "id": "user"
           },
           {
-            "id": "bank"
+            "id": "system"
           },
           {
-            "id": "bank.web"
+            "id": "system.api"
           },
           {
-            "id": "bank.api"
-          },
-          {
-            "id": "bank.db"
+            "id": "external"
           }
         ],
         "relationships": [
           {
             "id": "1"
           },
+          {
+            "id": "2"
+          }
+        ]
+      }
+    ],
+    "componentViews": [
+      {
+        "key": "components",
+        "scope": "system.api",
+        "description": null,
+        "title": null,
+        "elements": [
+          {
+            "id": "system.api"
+          },
+          {
+            "id": "system.api.handler"
+          },
+          {
+            "id": "external"
+          }
+        ],
+        "relationships": [
           {
             "id": "2"
           },
@@ -151,10 +228,51 @@
         ]
       }
     ],
-    "componentViews": [],
     "filteredViews": [],
-    "dynamicViews": [],
-    "deploymentViews": [],
+    "dynamicViews": [
+      {
+        "key": "flow",
+        "scope": "system",
+        "description": null,
+        "title": null,
+        "elements": [
+          {
+            "id": "user"
+          },
+          {
+            "id": "system.api"
+          },
+          {
+            "id": "external"
+          }
+        ],
+        "relationships": [
+          {
+            "id": "dynamic-1"
+          },
+          {
+            "id": "dynamic-2"
+          }
+        ]
+      }
+    ],
+    "deploymentViews": [
+      {
+        "key": "deployment",
+        "scope": "system",
+        "description": null,
+        "title": null,
+        "elements": [
+          {
+            "id": "production.node"
+          },
+          {
+            "id": "production.node.apiInstance"
+          }
+        ],
+        "relationships": []
+      }
+    ],
     "customViews": [],
     "imageViews": []
   },
@@ -163,9 +281,9 @@
     "identifiers": "hierarchical",
     "elements": [
       {
-        "id": "customer",
-        "name": "Customer",
-        "description": "A bank customer",
+        "id": "user",
+        "name": "User <Admin> & Owner",
+        "description": "Exercises exporter escaping",
         "technology": null,
         "parentId": null,
         "tags": "",
@@ -173,9 +291,9 @@
         "properties": []
       },
       {
-        "id": "bank",
-        "name": "Internet Banking System",
-        "description": "Allows customers to view accounts and make payments",
+        "id": "system",
+        "name": "Orders & Payments",
+        "description": "Primary application",
         "technology": null,
         "parentId": null,
         "tags": "",
@@ -183,33 +301,63 @@
         "properties": []
       },
       {
-        "id": "bank.web",
-        "name": "Web Application",
-        "description": "Customer-facing SPA",
-        "technology": "React",
-        "parentId": "bank",
-        "tags": "",
-        "kind": "Container",
-        "properties": []
-      },
-      {
-        "id": "bank.api",
-        "name": "API Application",
+        "id": "system.api",
+        "name": "API <Gateway>",
         "description": "Backend API",
         "technology": "Rust",
-        "parentId": "bank",
+        "parentId": "system",
         "tags": "",
         "kind": "Container",
         "properties": []
       },
       {
-        "id": "bank.db",
-        "name": "Database",
-        "description": "Stores audit/profile data",
-        "technology": "PostgreSQL",
-        "parentId": "bank",
+        "id": "system.api.handler",
+        "name": "Order Handler",
+        "description": "Handles orders",
+        "technology": "Rust",
+        "parentId": "system.api",
         "tags": "",
-        "kind": "Container",
+        "kind": "Component",
+        "properties": []
+      },
+      {
+        "id": "external",
+        "name": "External Ledger",
+        "description": null,
+        "technology": null,
+        "parentId": null,
+        "tags": "",
+        "kind": "SoftwareSystem",
+        "properties": []
+      },
+      {
+        "id": "production",
+        "name": "Production",
+        "description": null,
+        "technology": null,
+        "parentId": null,
+        "tags": "",
+        "kind": "DeploymentEnvironment",
+        "properties": []
+      },
+      {
+        "id": "production.node",
+        "name": "Primary Node",
+        "description": "Local host",
+        "technology": "Linux",
+        "parentId": "production",
+        "tags": "",
+        "kind": "DeploymentNode",
+        "properties": []
+      },
+      {
+        "id": "production.node.apiInstance",
+        "name": "system.api",
+        "description": null,
+        "technology": null,
+        "parentId": "production.node",
+        "tags": "",
+        "kind": "ContainerInstance",
         "properties": []
       }
     ],

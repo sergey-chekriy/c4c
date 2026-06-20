@@ -89,7 +89,7 @@ fn arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
 
 fn usage() -> Result<(), String> {
     Err(
-        "usage: c4c <validate|inspect> <workspace.dsl> [--strict-safe] [--allow-network]\n       c4c export <workspace.dsl> [--format json|mermaid|d2|plantuml|c4plantuml|dot|drawio|archimate|html|svg|png] [--out out] [--strict-safe]\n       c4c docs <workspace.dsl> [--out site] [--strict-safe]\n       c4c adr list <workspace.dsl> [--strict-safe]"
+        "usage: c4c <validate|inspect> <workspace.dsl> [--strict-safe] [--allow-network]\n       c4c export <workspace.dsl> [--format json|mermaid|d2|plantuml|c4plantuml|dot|drawio|archimate|archi|archi-native|archimate-native|html|svg|png] [--out out] [--strict-safe]\n       c4c docs <workspace.dsl> [--out site] [--strict-safe]\n       c4c adr list <workspace.dsl> [--strict-safe]"
             .into(),
     )
 }

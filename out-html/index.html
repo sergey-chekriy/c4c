@@ -1,6 +1,30 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Workspace</title><link rel="stylesheet" href="assets/style.css"></head><body><nav><a href="docs/index.html">Documentation</a><a href="decisions/index.html">ADRs</a></nav><h1>Milestone 7 Documentation</h1><p>Local documentation site fixture</p><h2>Model summary</h2><p>2 elements, 0 relationships, 2 views.</p><ul><li><code>bank</code> — Bank</li><li><code>bank.api</code> — API</li></ul><h2>Diagrams</h2><section><h2>context</h2><p><a href="diagrams/context.mmd">Raw Mermaid source</a></p><pre><code>flowchart LR
-  bank[&quot;Bank\nSoftware System&quot;]
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Workspace</title><link rel="stylesheet" href="assets/style.css"></head><body><nav><a href="docs/index.html">Documentation</a><a href="decisions/index.html">ADRs</a></nav><h1>Milestone 8 &lt;Exporters&gt; &amp; Exchange</h1><p>Deterministic local formats</p><h2>Model summary</h2><p>8 elements, 3 relationships, 6 views.</p><ul><li><code>user</code> — User &lt;Admin&gt; &amp; Owner</li><li><code>system</code> — Orders &amp; Payments</li><li><code>system.api</code> — API &lt;Gateway&gt;</li><li><code>system.api.handler</code> — Order Handler</li><li><code>external</code> — External Ledger</li><li><code>production</code> — Production</li><li><code>production.node</code> — Primary Node</li><li><code>production.node.apiInstance</code> — system.api</li></ul><h2>Diagrams</h2><section><h2>landscape</h2><p><a href="diagrams/landscape.mmd">Raw Mermaid source</a></p><pre><code>flowchart LR
+  user[&quot;User &lt;Admin&gt; &amp; Owner\nPerson&quot;]
+  system[&quot;Orders &amp; Payments\nSoftware System&quot;]
+  external[&quot;External Ledger\nSoftware System&quot;]
+</code></pre></section><section><h2>context</h2><p><a href="diagrams/context.mmd">Raw Mermaid source</a></p><pre><code>flowchart LR
+  user[&quot;User &lt;Admin&gt; &amp; Owner\nPerson&quot;]
+  system[&quot;Orders &amp; Payments\nSoftware System&quot;]
+  external[&quot;External Ledger\nSoftware System&quot;]
+  user --&gt;|Uses &lt;securely&gt; &amp; safely| system
+  system --&gt;|Posts entries| external
 </code></pre></section><section><h2>containers</h2><p><a href="diagrams/containers.mmd">Raw Mermaid source</a></p><pre><code>flowchart LR
-  bank[&quot;Bank\nSoftware System&quot;]
-  bank_api[&quot;API\nContainer&quot;]
-</code></pre></section><p>4 documentation sections; 5 decisions.</p></body></html>
+  user[&quot;User &lt;Admin&gt; &amp; Owner\nPerson&quot;]
+  system[&quot;Orders &amp; Payments\nSoftware System&quot;]
+  system_api[&quot;API &lt;Gateway&gt;\nContainer&quot;]
+  external[&quot;External Ledger\nSoftware System&quot;]
+  user --&gt;|Uses &lt;securely&gt; &amp; safely| system_api
+  system_api --&gt;|Posts entries| external
+</code></pre></section><section><h2>components</h2><p><a href="diagrams/components.mmd">Raw Mermaid source</a></p><pre><code>flowchart LR
+  system_api[&quot;API &lt;Gateway&gt;\nContainer&quot;]
+  system_api_handler[&quot;Order Handler\nComponent&quot;]
+  external[&quot;External Ledger\nSoftware System&quot;]
+  system_api --&gt;|Posts entries| external
+  system_api_handler --&gt;|Posts entries| external
+</code></pre></section><section><h2>flow</h2><p><a href="diagrams/flow.mmd">Raw Mermaid source</a></p><pre><code>sequenceDiagram
+  User &lt;Admin&gt; &amp; Owner-&gt;&gt;API &lt;Gateway&gt;: Open orders
+  API &lt;Gateway&gt;-&gt;&gt;External Ledger: Post entry
+</code></pre></section><section><h2>deployment</h2><p><a href="diagrams/deployment.mmd">Raw Mermaid source</a></p><pre><code>flowchart LR
+  production_node[&quot;Primary Node\nDeployment Node&quot;]
+  production_node_apiInstance[&quot;system.api\nContainer Instance&quot;]
+</code></pre></section><p>0 documentation sections; 0 decisions.</p></body></html>

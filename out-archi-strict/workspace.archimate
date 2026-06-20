@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<archimate:model xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:archimate="http://www.archimatetool.com/archimate" name="Milestone 8 &lt;Exporters&gt; &amp; Exchange" id="id-c4c-model" version="5.0.0">
+  <folder name="Strategy" id="id-c4c-folder-strategy" type="strategy">
+  </folder>
+  <folder name="Business" id="id-c4c-folder-business" type="business">
+    <element xsi:type="archimate:BusinessActor" name="User &lt;Admin&gt; &amp; Owner" id="id-c4c-element-user">
+      <documentation>Exercises exporter escaping</documentation>
+    </element>
+  </folder>
+  <folder name="Application" id="id-c4c-folder-application" type="application">
+    <element xsi:type="archimate:ApplicationComponent" name="Orders &amp; Payments" id="id-c4c-element-system">
+      <documentation>Primary application</documentation>
+    </element>
+    <element xsi:type="archimate:ApplicationComponent" name="API &lt;Gateway&gt;" id="id-c4c-element-system_2eapi">
+      <documentation>Backend API</documentation>
+    </element>
+    <element xsi:type="archimate:ApplicationComponent" name="Order Handler" id="id-c4c-element-system_2eapi_2ehandler">
+      <documentation>Handles orders</documentation>
+    </element>
+    <element xsi:type="archimate:ApplicationComponent" name="External Ledger" id="id-c4c-element-external"/>
+    <element xsi:type="archimate:ApplicationComponent" name="system.api" id="id-c4c-element-production_2enode_2eapiInstance"/>
+  </folder>
+  <folder name="Technology &amp; Physical" id="id-c4c-folder-technology" type="technology">
+    <element xsi:type="archimate:Node" name="Primary Node" id="id-c4c-element-production_2enode">
+      <documentation>Local host</documentation>
+    </element>
+  </folder>
+  <folder name="Motivation" id="id-c4c-folder-motivation" type="motivation">
+  </folder>
+  <folder name="Implementation &amp; Migration" id="id-c4c-folder-implementation_migration" type="implementation_migration">
+  </folder>
+  <folder name="Other" id="id-c4c-folder-other" type="other">
+    <element xsi:type="archimate:Grouping" name="Production" id="id-c4c-element-production"/>
+  </folder>
+  <folder name="Relations" id="id-c4c-folder-relations" type="relations">
+    <element xsi:type="archimate:TriggeringRelationship" id="id-c4c-relationship-1" source="id-c4c-element-user" target="id-c4c-element-system_2eapi" name="Uses &lt;securely&gt; &amp; safely"/>
+    <element xsi:type="archimate:TriggeringRelationship" id="id-c4c-relationship-2" source="id-c4c-element-system_2eapi" target="id-c4c-element-external" name="Posts entries"/>
+    <element xsi:type="archimate:TriggeringRelationship" id="id-c4c-relationship-3" source="id-c4c-element-system_2eapi_2ehandler" target="id-c4c-element-external" name="Posts entries"/>
+    <element xsi:type="archimate:TriggeringRelationship" id="id-c4c-relationship-view-context-1" source="id-c4c-element-user" target="id-c4c-element-system" name="Uses &lt;securely&gt; &amp; safely"/>
+    <element xsi:type="archimate:TriggeringRelationship" id="id-c4c-relationship-view-context-2" source="id-c4c-element-system" target="id-c4c-element-external" name="Posts entries"/>
+  </folder>
+  <folder name="Views" id="id-c4c-folder-diagrams" type="diagrams">
+    <element xsi:type="archimate:ArchimateDiagramModel" name="landscape" id="id-c4c-view-landscape" connectionRouterType="2">
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-landscape-user" archimateElement="id-c4c-element-user" type="1" fillColor="#ffffb5">
+        <bounds x="40" y="40" width="180" height="80"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-landscape-system" archimateElement="id-c4c-element-system" type="1" fillColor="#b5ffff">
+        <bounds x="300" y="40" width="180" height="80"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-landscape-external" archimateElement="id-c4c-element-external" type="1" fillColor="#b5ffff">
+        <bounds x="560" y="40" width="180" height="80"/>
+      </child>
+    </element>
+    <element xsi:type="archimate:ArchimateDiagramModel" name="context" id="id-c4c-view-context" connectionRouterType="2">
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-context-user" archimateElement="id-c4c-element-user" type="1" fillColor="#ffffb5">
+        <bounds x="40" y="40" width="180" height="80"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-context-1" source="id-c4c-viewobject-context-user" target="id-c4c-viewobject-context-system" archimateRelationship="id-c4c-relationship-view-context-1"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-context-system" archimateElement="id-c4c-element-system" type="1" fillColor="#b5ffff">
+        <bounds x="300" y="40" width="180" height="80"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-context-2" source="id-c4c-viewobject-context-system" target="id-c4c-viewobject-context-external" archimateRelationship="id-c4c-relationship-view-context-2"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-context-external" archimateElement="id-c4c-element-external" type="1" fillColor="#b5ffff">
+        <bounds x="560" y="40" width="180" height="80"/>
+      </child>
+    </element>
+    <element xsi:type="archimate:ArchimateDiagramModel" name="containers" id="id-c4c-view-containers" connectionRouterType="2">
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-containers-user" archimateElement="id-c4c-element-user" type="1" fillColor="#ffffb5">
+        <bounds x="40" y="40" width="180" height="80"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-containers-1" source="id-c4c-viewobject-containers-user" target="id-c4c-viewobject-containers-system_2eapi" archimateRelationship="id-c4c-relationship-1"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-containers-system" archimateElement="id-c4c-element-system" type="1" fillColor="#b5ffff">
+        <bounds x="300" y="40" width="180" height="80"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-containers-system_2eapi" archimateElement="id-c4c-element-system_2eapi" type="1" fillColor="#b5ffff">
+        <bounds x="560" y="40" width="180" height="80"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-containers-2" source="id-c4c-viewobject-containers-system_2eapi" target="id-c4c-viewobject-containers-external" archimateRelationship="id-c4c-relationship-2"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-containers-external" archimateElement="id-c4c-element-external" type="1" fillColor="#b5ffff">
+        <bounds x="820" y="40" width="180" height="80"/>
+      </child>
+    </element>
+    <element xsi:type="archimate:ArchimateDiagramModel" name="components" id="id-c4c-view-components" connectionRouterType="2">
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-components-system_2eapi" archimateElement="id-c4c-element-system_2eapi" type="1" fillColor="#b5ffff">
+        <bounds x="40" y="40" width="180" height="80"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-components-1" source="id-c4c-viewobject-components-system_2eapi" target="id-c4c-viewobject-components-external" archimateRelationship="id-c4c-relationship-2"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-components-system_2eapi_2ehandler" archimateElement="id-c4c-element-system_2eapi_2ehandler" type="1" fillColor="#b5ffff">
+        <bounds x="300" y="40" width="180" height="80"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-components-2" source="id-c4c-viewobject-components-system_2eapi_2ehandler" target="id-c4c-viewobject-components-external" archimateRelationship="id-c4c-relationship-3"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-components-external" archimateElement="id-c4c-element-external" type="1" fillColor="#b5ffff">
+        <bounds x="560" y="40" width="180" height="80"/>
+      </child>
+    </element>
+    <element xsi:type="archimate:ArchimateDiagramModel" name="flow" id="id-c4c-view-flow" connectionRouterType="2">
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-flow-user" archimateElement="id-c4c-element-user" type="1" fillColor="#ffffb5">
+        <bounds x="40" y="40" width="180" height="80"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-flow-1" source="id-c4c-viewobject-flow-user" target="id-c4c-viewobject-flow-system_2eapi" archimateRelationship="id-c4c-relationship-1"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-flow-system_2eapi" archimateElement="id-c4c-element-system_2eapi" type="1" fillColor="#b5ffff">
+        <bounds x="300" y="40" width="180" height="80"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-flow-2" source="id-c4c-viewobject-flow-system_2eapi" target="id-c4c-viewobject-flow-external" archimateRelationship="id-c4c-relationship-2"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-flow-external" archimateElement="id-c4c-element-external" type="1" fillColor="#b5ffff">
+        <bounds x="560" y="40" width="180" height="80"/>
+      </child>
+    </element>
+    <element xsi:type="archimate:ArchimateDiagramModel" name="deployment" id="id-c4c-view-deployment" connectionRouterType="2">
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-deployment-production_2enode" archimateElement="id-c4c-element-production_2enode" type="1" fillColor="#c9d9ff">
+        <bounds x="40" y="40" width="180" height="80"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-deployment-production_2enode_2eapiInstance" archimateElement="id-c4c-element-production_2enode_2eapiInstance" type="1" fillColor="#b5ffff">
+        <bounds x="300" y="40" width="180" height="80"/>
+      </child>
+    </element>
+  </folder>
+</archimate:model>
