@@ -25,6 +25,9 @@ Implemented in this repo:
 - Semantic validation for duplicate identifiers and view keys, references, parent hierarchy, filters, deployment environments, dynamic scopes, and view scope types.
 - Element/relationship styles, light/dark variants, theme references, branding, and terminology with validation and safe offline preservation.
 - Deterministic Mermaid class/link styling for supported colors, strokes, borders, thickness, line styles, and basic shapes.
+- Safe local file/directory includes, constants, source-mapped substitution, and deterministic dependency tracking.
+- Element/relationship selector expressions with tag, type, property, boolean, and comparison operators.
+- Strict-safe validation and explicit rejection of remote includes, scripts, and plugins without execution.
 
 
 Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
@@ -58,7 +61,15 @@ Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
 - Mermaid element classes, basic shape approximation, relationship line styling, and terminology labels.
 - Remote/local asset references remain metadata-only and are never fetched.
 
-M6+ preprocessing, documentation rendering, and additional exporters remain deferred.
+## Milestone 6 additions
+
+- Local `!include` files and non-recursive directories with cycle detection and stable ordering.
+- Ordered `!constant` definitions and `${NAME}` substitution in quoted and unquoted values.
+- Source-segment mapping keeps included-file diagnostics attached to their original paths.
+- Safe expression evaluation for view selectors and `--strict-safe` supply-chain validation.
+- Scripts/plugins and remote includes are parsed but never executed or fetched.
+
+M7+ documentation rendering and additional exporters remain deferred.
 
 ## Build
 
@@ -131,7 +142,7 @@ workspace.dsl
   -> exporters
 ```
 
-The compiler now has a Tree-sitter syntax frontend, span-aware compatibility adapter, source diagnostics, semantic validation, core model grammar, M4 view expansion, and M5 styling. Preprocessing, documentation rendering, and additional exporters are planned in later milestones.
+The compiler now has a Tree-sitter syntax frontend, safe preprocessing, span-aware source diagnostics, semantic validation, core model grammar, M4 view expansion, and M5 styling. Documentation rendering and additional exporters are planned in later milestones.
 
 ## Offline/security policy
 
@@ -141,7 +152,8 @@ The project should remain local-first:
 - No network calls by default.
 - No remote rendering.
 - No cloud dependency.
-- Remote `!include <url>` should require an explicit opt-in flag if implemented.
+- Remote `!include <url>` is rejected without making a request; `--allow-network` is parsed but fetching remains unimplemented.
+- `--strict-safe` rejects remote assets and executable directives.
 
 ## License
 

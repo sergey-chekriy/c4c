@@ -799,7 +799,7 @@ impl Parser {
         self.error(
             directive.span,
             format!("!{} is disabled and was not executed", directive.name),
-            Some("remove executable directives; scripts and plugins are out of scope for M3"),
+            Some("remove executable directives; M6 parses them but never executes code"),
         );
         self.workspace.directives.push(directive);
     }
@@ -1708,6 +1708,7 @@ impl Parser {
                     | TokenKind::NotEquals
                     | TokenKind::And
                     | TokenKind::Or
+                    | TokenKind::Not
                     | TokenKind::LeftParen
                     | TokenKind::RightParen
             )
@@ -1751,7 +1752,10 @@ impl Parser {
 
     fn warn_unsupported_selectors(&mut self, selectors: &[ViewSelector]) {
         for selector in selectors {
-            if selector.expression && !selector.value.contains("->") {
+            if selector.expression
+                && !selector.value.contains("->")
+                && !supported_view_expression(&selector.value)
+            {
                 self.workspace.warnings.push(
                     Diagnostic::warning(
                         selector.span,
@@ -2237,6 +2241,7 @@ fn token_text(kind: &TokenKind) -> String {
         TokenKind::NotEquals => "!=".into(),
         TokenKind::And => "&&".into(),
         TokenKind::Or => "||".into(),
+        TokenKind::Not => "!".into(),
         TokenKind::LeftParen => "(".into(),
         TokenKind::RightParen => ")".into(),
         TokenKind::Arrow => "->".into(),
@@ -2246,4 +2251,14 @@ fn token_text(kind: &TokenKind) -> String {
         TokenKind::Newline => "newline".into(),
         TokenKind::Eof => "end of file".into(),
     }
+}
+
+fn supported_view_expression(value: &str) -> bool {
+    value.split_whitespace().any(|token| {
+        token.starts_with("element.tag")
+            || token.starts_with("element.type")
+            || token.starts_with("element.properties.")
+            || token.starts_with("relationship.tag")
+            || token.starts_with("relationship.properties.")
+    })
 }

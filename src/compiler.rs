@@ -1,6 +1,7 @@
 use crate::{
     diagnostic::{render_all, Diagnostic},
     parser,
+    preprocessor::{self, IncludeDependency},
     source::{SourceMap, Span},
 };
 use std::{
@@ -33,6 +34,7 @@ pub struct Workspace {
     pub themes: Vec<ThemeReference>,
     pub branding: Option<Branding>,
     pub terminology: Vec<Property>,
+    pub dependencies: Vec<IncludeDependency>,
     pub warnings: Vec<Diagnostic>,
     pub span: Span,
     pub source_map: SourceMap,
@@ -63,6 +65,7 @@ impl Workspace {
             themes: Vec::new(),
             branding: None,
             terminology: Vec::new(),
+            dependencies: Vec::new(),
             warnings: Vec::new(),
             span,
             source_map,
@@ -332,6 +335,7 @@ pub struct BrandingFont {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CompileOptions {
     pub allow_network: bool,
+    pub strict_safe: bool,
 }
 
 pub fn compile_file(path: &str) -> Result<Workspace, String> {
@@ -343,13 +347,21 @@ pub fn compile_file_with_options(path: &str, options: CompileOptions) -> Result<
     let mut stack = Vec::new();
     let mut workspace = compile_path(Path::new(path), &mut sources, options, &mut stack)?;
     workspace.source_map = sources;
+    if options.strict_safe {
+        enforce_strict_safe(&workspace)?;
+    }
     Ok(workspace)
 }
 
 #[cfg(test)]
 pub fn compile(source: &str) -> Result<Workspace, String> {
-    let (sources, source_id) = SourceMap::from_text("<memory>", source);
-    compile_sources(&sources, source_id)
+    let mut sources = SourceMap::new();
+    let preprocessed = preprocessor::text(Path::new("<memory>"), source, &mut sources, false)?;
+    let mut workspace = compile_sources(&sources, preprocessed.source_id)?;
+    workspace.dependencies = preprocessed.dependencies;
+    workspace.warnings.extend(preprocessed.warnings);
+    workspace.source_map = sources;
+    Ok(workspace)
 }
 
 fn compile_sources(
@@ -382,8 +394,16 @@ fn compile_path(
         ));
     }
     stack.push(canonical.clone());
-    let source_id = sources.add_file(&path.to_string_lossy())?;
+    let preprocessed = preprocessor::file(
+        &canonical,
+        sources,
+        options.allow_network,
+        options.strict_safe,
+    )?;
+    let source_id = preprocessed.source_id;
     let mut derived = compile_sources(sources, source_id)?;
+    derived.dependencies.extend(preprocessed.dependencies);
+    derived.warnings.extend(preprocessed.warnings);
     let result = if let Some(extension) = derived.extension.clone() {
         if is_url(&extension.target) {
             let message = if options.allow_network {
@@ -486,12 +506,58 @@ fn merge_workspaces(mut base: Workspace, mut derived: Workspace, sources: Source
     base.relationship_styles.extend(derived.relationship_styles);
     base.themes.extend(derived.themes);
     base.terminology.extend(derived.terminology);
+    base.dependencies.extend(derived.dependencies);
     base.warnings.extend(derived.warnings);
     base
 }
 
 fn is_url(value: &str) -> bool {
     value.starts_with("http://") || value.starts_with("https://")
+}
+
+fn enforce_strict_safe(workspace: &Workspace) -> Result<(), String> {
+    let mut diagnostics = Vec::new();
+    for theme in &workspace.themes {
+        if is_url(&theme.source) {
+            diagnostics.push(Diagnostic::error(
+                theme.span,
+                "strict-safe mode rejects remote theme references",
+            ));
+        }
+    }
+    for style in &workspace.element_styles {
+        for property in &style.values {
+            if property.key == "icon" && is_url(&property.value) {
+                diagnostics.push(Diagnostic::error(
+                    property.span,
+                    "strict-safe mode rejects remote icon references",
+                ));
+            }
+        }
+    }
+    if let Some(branding) = &workspace.branding {
+        if let Some(logo) = &branding.logo {
+            if is_url(&logo.value) {
+                diagnostics.push(Diagnostic::error(
+                    logo.span,
+                    "strict-safe mode rejects remote branding logos",
+                ));
+            }
+        }
+        for font in &branding.fonts {
+            if font.location.as_deref().is_some_and(is_url) {
+                diagnostics.push(Diagnostic::error(
+                    font.span,
+                    "strict-safe mode rejects remote branding fonts",
+                ));
+            }
+        }
+    }
+    if diagnostics.is_empty() {
+        Ok(())
+    } else {
+        Err(render_all(&diagnostics, &workspace.source_map))
+    }
 }
 
 pub fn warnings(workspace: &Workspace) -> Option<String> {
@@ -799,6 +865,18 @@ fn validate_view_options(workspace: &Workspace, view: &View, diagnostics: &mut V
                             format!("view relationship expression references undefined element '{identifier}'"),
                         ));
                     }
+                }
+            } else if expression_candidate(&selector.value) {
+                if let Err(message) = parse_view_expression(&selector.value) {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            selector.span,
+                            format!("unsupported view expression: {message}"),
+                        )
+                        .with_help(
+                            "use tag/type/property comparisons with !, &&, ||, and parentheses",
+                        ),
+                    );
                 }
             }
             continue;
@@ -1423,6 +1501,16 @@ pub fn inspect(workspace: &Workspace) -> String {
             ));
         }
     }
+    if !workspace.dependencies.is_empty() {
+        output.push_str("m6 includes:\n");
+        for dependency in &workspace.dependencies {
+            output.push_str(&format!(
+                "  {} -> {}\n",
+                dependency.from.display(),
+                dependency.to.display()
+            ));
+        }
+    }
     if workspace.extension.is_some()
         || !workspace.properties.is_empty()
         || !workspace.directives.is_empty()
@@ -1723,6 +1811,275 @@ fn mermaid_shape(label: &str, shape: Option<&str>) -> String {
     }
 }
 
+#[derive(Debug)]
+enum ViewExpression {
+    Predicate {
+        target: ExpressionTarget,
+        field: ExpressionField,
+        equal: bool,
+        value: String,
+    },
+    Not(Box<ViewExpression>),
+    And(Box<ViewExpression>, Box<ViewExpression>),
+    Or(Box<ViewExpression>, Box<ViewExpression>),
+}
+
+#[derive(Debug, PartialEq)]
+enum ExpressionTarget {
+    Element,
+    Relationship,
+}
+
+#[derive(Debug)]
+enum ExpressionField {
+    Tag,
+    Type,
+    Property(String),
+}
+
+impl ViewExpression {
+    fn matches_element(&self, element: &Element) -> bool {
+        self.evaluate(|target, field, expected| {
+            if *target != ExpressionTarget::Element {
+                return None;
+            }
+            Some(match field {
+                ExpressionField::Tag => element.tags.iter().any(|tag| tag == expected),
+                ExpressionField::Type => element_kind_label(&element.kind)
+                    .replace(' ', "")
+                    .eq_ignore_ascii_case(&expected.replace(' ', "")),
+                ExpressionField::Property(name) => element
+                    .properties
+                    .iter()
+                    .any(|property| property.key == *name && property.value == expected),
+            })
+        })
+        .unwrap_or(false)
+    }
+
+    fn matches_relationship(&self, relationship: &Relationship) -> bool {
+        self.evaluate(|target, field, expected| {
+            if *target != ExpressionTarget::Relationship {
+                return None;
+            }
+            Some(match field {
+                ExpressionField::Tag => relationship.tags.iter().any(|tag| tag == expected),
+                ExpressionField::Property(name) => relationship
+                    .properties
+                    .iter()
+                    .any(|property| property.key == *name && property.value == expected),
+                ExpressionField::Type => false,
+            })
+        })
+        .unwrap_or(false)
+    }
+
+    fn evaluate(
+        &self,
+        predicate: impl Fn(&ExpressionTarget, &ExpressionField, &str) -> Option<bool> + Copy,
+    ) -> Option<bool> {
+        match self {
+            Self::Predicate {
+                target,
+                field,
+                equal,
+                value,
+            } => predicate(target, field, value).map(|actual| actual == *equal),
+            Self::Not(expression) => expression.evaluate(predicate).map(|value| !value),
+            Self::And(left, right) => match (left.evaluate(predicate), right.evaluate(predicate)) {
+                (Some(left), Some(right)) => Some(left && right),
+                (Some(false), None) | (None, Some(false)) => Some(false),
+                _ => None,
+            },
+            Self::Or(left, right) => match (left.evaluate(predicate), right.evaluate(predicate)) {
+                (Some(left), Some(right)) => Some(left || right),
+                (Some(value), None) | (None, Some(value)) => Some(value),
+                (None, None) => None,
+            },
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum ExpressionToken {
+    Value(String),
+    Equal,
+    NotEqual,
+    And,
+    Or,
+    Not,
+    LeftParen,
+    RightParen,
+}
+
+struct ExpressionParser {
+    tokens: Vec<ExpressionToken>,
+    index: usize,
+}
+
+impl ExpressionParser {
+    fn parse(mut self) -> Result<ViewExpression, String> {
+        let expression = self.parse_or()?;
+        if self.index != self.tokens.len() {
+            return Err("unexpected trailing token".into());
+        }
+        Ok(expression)
+    }
+
+    fn parse_or(&mut self) -> Result<ViewExpression, String> {
+        let mut expression = self.parse_and()?;
+        while self.eat(&ExpressionToken::Or) {
+            expression = ViewExpression::Or(Box::new(expression), Box::new(self.parse_and()?));
+        }
+        Ok(expression)
+    }
+
+    fn parse_and(&mut self) -> Result<ViewExpression, String> {
+        let mut expression = self.parse_unary()?;
+        while self.eat(&ExpressionToken::And) {
+            expression = ViewExpression::And(Box::new(expression), Box::new(self.parse_unary()?));
+        }
+        Ok(expression)
+    }
+
+    fn parse_unary(&mut self) -> Result<ViewExpression, String> {
+        if self.eat(&ExpressionToken::Not) {
+            return Ok(ViewExpression::Not(Box::new(self.parse_unary()?)));
+        }
+        if self.eat(&ExpressionToken::LeftParen) {
+            let expression = self.parse_or()?;
+            if !self.eat(&ExpressionToken::RightParen) {
+                return Err("missing ')'".into());
+            }
+            return Ok(expression);
+        }
+        self.parse_predicate()
+    }
+
+    fn parse_predicate(&mut self) -> Result<ViewExpression, String> {
+        let Some(ExpressionToken::Value(name)) = self.tokens.get(self.index) else {
+            return Err("expected element or relationship predicate".into());
+        };
+        let name = name.clone();
+        self.index += 1;
+        let equal = if self.eat(&ExpressionToken::Equal) {
+            true
+        } else if self.eat(&ExpressionToken::NotEqual) {
+            false
+        } else {
+            return Err("expected == or !=".into());
+        };
+        let Some(ExpressionToken::Value(value)) = self.tokens.get(self.index) else {
+            return Err("comparison value is missing".into());
+        };
+        let value = value.trim_matches('"').to_string();
+        self.index += 1;
+        let (target, field) = expression_field(&name)?;
+        Ok(ViewExpression::Predicate {
+            target,
+            field,
+            equal,
+            value,
+        })
+    }
+
+    fn eat(&mut self, token: &ExpressionToken) -> bool {
+        if self.tokens.get(self.index) == Some(token) {
+            self.index += 1;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+fn parse_view_expression(value: &str) -> Result<ViewExpression, String> {
+    ExpressionParser {
+        tokens: expression_tokens(value)?,
+        index: 0,
+    }
+    .parse()
+}
+
+fn expression_tokens(value: &str) -> Result<Vec<ExpressionToken>, String> {
+    let mut tokens = Vec::new();
+    let mut chars = value.char_indices().peekable();
+    while let Some((start, character)) = chars.next() {
+        if character.is_whitespace() {
+            continue;
+        }
+        let token = match character {
+            '(' => ExpressionToken::LeftParen,
+            ')' => ExpressionToken::RightParen,
+            '!' if chars.peek().is_some_and(|(_, next)| *next == '=') => {
+                chars.next();
+                ExpressionToken::NotEqual
+            }
+            '!' => ExpressionToken::Not,
+            '=' if chars.peek().is_some_and(|(_, next)| *next == '=') => {
+                chars.next();
+                ExpressionToken::Equal
+            }
+            '&' if chars.peek().is_some_and(|(_, next)| *next == '&') => {
+                chars.next();
+                ExpressionToken::And
+            }
+            '|' if chars.peek().is_some_and(|(_, next)| *next == '|') => {
+                chars.next();
+                ExpressionToken::Or
+            }
+            '"' => {
+                let mut end = None;
+                for (index, next) in chars.by_ref() {
+                    if next == '"' {
+                        end = Some(index + 1);
+                        break;
+                    }
+                }
+                let end = end.ok_or_else(|| "unterminated quoted value".to_string())?;
+                ExpressionToken::Value(value[start..end].into())
+            }
+            _ => {
+                let mut end = value.len();
+                while let Some((index, next)) = chars.peek() {
+                    if next.is_whitespace() || matches!(next, '(' | ')' | '!' | '=' | '&' | '|') {
+                        end = *index;
+                        break;
+                    }
+                    chars.next();
+                }
+                ExpressionToken::Value(value[start..end].into())
+            }
+        };
+        tokens.push(token);
+    }
+    Ok(tokens)
+}
+
+fn expression_field(value: &str) -> Result<(ExpressionTarget, ExpressionField), String> {
+    let (target, field) = value
+        .split_once('.')
+        .ok_or_else(|| format!("unsupported predicate '{value}'"))?;
+    let target = match target {
+        "element" => ExpressionTarget::Element,
+        "relationship" => ExpressionTarget::Relationship,
+        _ => return Err(format!("unsupported expression target '{target}'")),
+    };
+    let field = match field {
+        "tag" => ExpressionField::Tag,
+        "type" if target == ExpressionTarget::Element => ExpressionField::Type,
+        value if value.starts_with("properties.") && value.len() > 11 => {
+            ExpressionField::Property(value[11..].into())
+        }
+        _ => return Err(format!("unsupported expression field '{field}'")),
+    };
+    Ok((target, field))
+}
+
+fn expression_candidate(value: &str) -> bool {
+    value.contains("element.") || value.contains("relationship.")
+}
+
 #[derive(Default)]
 struct ExpandedView {
     elements: HashSet<String>,
@@ -1903,7 +2260,22 @@ fn apply_explicit_includes(workspace: &Workspace, view: &View, expanded: &mut Ex
                     expanded.relationships.insert(index);
                 }
             }
-        } else if !selector.expression {
+        } else if selector.expression {
+            if let Ok(expression) = parse_view_expression(&selector.value) {
+                for element in &workspace.elements {
+                    if expression.matches_element(element) {
+                        expanded.elements.insert(element.id.clone());
+                    }
+                }
+                for (index, relationship) in workspace.relationships.iter().enumerate() {
+                    if expression.matches_relationship(relationship) {
+                        expanded.elements.insert(relationship.source.clone());
+                        expanded.elements.insert(relationship.destination.clone());
+                        expanded.relationships.insert(index);
+                    }
+                }
+            }
+        } else {
             expanded.elements.insert(selector.value.clone());
         }
     }
@@ -1922,7 +2294,17 @@ fn apply_excludes(workspace: &Workspace, view: &View, expanded: &mut ExpandedVie
             expanded.relationships.retain(|index| {
                 !relationship_matches(&workspace.relationships[*index], source, destination)
             });
-        } else if !selector.expression {
+        } else if selector.expression {
+            if let Ok(expression) = parse_view_expression(&selector.value) {
+                expanded.elements.retain(|identifier| {
+                    find(workspace, identifier)
+                        .is_none_or(|element| !expression.matches_element(element))
+                });
+                expanded.relationships.retain(|index| {
+                    !expression.matches_relationship(&workspace.relationships[*index])
+                });
+            }
+        } else {
             expanded.elements.remove(&selector.value);
         }
     }
@@ -2460,6 +2842,7 @@ mod tests {
             "tests/fixtures/m3-url-extension.dsl",
             CompileOptions {
                 allow_network: true,
+                strict_safe: false,
             },
         )
         .unwrap_err();
@@ -2541,8 +2924,7 @@ mod tests {
             "workspace {\n  !include other.dsl\n  styles {\n    element Person\n  }\n  views {\n    dynamic system key {\n    }\n  }\n}\n",
         )
         .unwrap_err();
-        assert!(error.contains("unknown workspace statement '!include'"));
-        assert!(error.contains("unknown workspace statement 'styles'"));
+        assert!(error.contains("cannot include 'other.dsl'"));
     }
 
     #[test]
@@ -2621,10 +3003,10 @@ mod tests {
             .warnings
             .iter()
             .any(|warning| warning.message.contains("Mermaid")));
-        assert!(workspace
+        assert!(!workspace
             .warnings
             .iter()
-            .any(|warning| warning.message.contains("not evaluated")));
+            .any(|warning| warning.message.contains("element.tag==Core")));
     }
 
     #[test]
@@ -2760,6 +3142,146 @@ mod tests {
                 error.contains(message),
                 "missing diagnostic: {message}\n{error}"
             );
+        }
+    }
+
+    #[test]
+    fn preprocesses_m6_includes_constants_and_expressions() {
+        let workspace = compile_file("tests/fixtures/m6-preprocessing.dsl").unwrap();
+        validate(&workspace).unwrap();
+        assert_eq!(workspace.name.as_deref(), Some("Milestone 6 Workspace"));
+        assert_eq!(workspace.elements[0].id, "user");
+        assert_eq!(workspace.elements[1].id, "system");
+        assert_eq!(workspace.elements[2].id, "api");
+        assert_eq!(workspace.dependencies.len(), 4);
+        assert!(workspace.dependencies[0].to.ends_with("01-user.dsl"));
+        assert!(workspace.dependencies[1].to.ends_with("02-system.dsl"));
+        assert_eq!(workspace.elements[0].tags, ["External"]);
+        let diagram = mermaid(&workspace, &workspace.views[0]);
+        assert!(diagram.contains("user[\"User\\nPerson\"]"));
+        assert!(diagram.contains("system[\"System\\nSoftware System\"]"));
+        assert!(!diagram.contains("Included container"));
+    }
+
+    #[test]
+    fn substitutes_m6_constants_and_rejects_invalid_definitions() {
+        let workspace = compile(
+            "!constant NAME \"Constant Workspace\"\n!constant TECH Rust\nworkspace \"${NAME}\" {\n  model {\n    system = softwareSystem System {\n      api = container API Backend ${TECH}\n    }\n  }\n}\n",
+        )
+        .unwrap();
+        assert_eq!(workspace.name.as_deref(), Some("Constant Workspace"));
+        assert_eq!(workspace.elements[1].technology.as_deref(), Some("Rust"));
+
+        for (source, message) in [
+            (
+                "workspace \"${MISSING}\" {\n}\n",
+                "undefined constant 'MISSING'",
+            ),
+            (
+                "!constant A one\n!constant A two\nworkspace {\n}\n",
+                "duplicate constant 'A'",
+            ),
+            (
+                "!constant A ${B}\n!constant B ${A}\nworkspace {\n}\n",
+                "recursive constant detected",
+            ),
+        ] {
+            assert!(compile(source).unwrap_err().contains(message));
+        }
+    }
+
+    #[test]
+    fn reports_m6_include_failures_and_included_source_locations() {
+        assert!(compile_file("tests/fixtures/m6-missing.dsl")
+            .unwrap_err()
+            .contains("cannot include"));
+        assert!(compile_file("tests/fixtures/m6-cycle-a.dsl")
+            .unwrap_err()
+            .contains("include cycle detected"));
+        let remote = compile_file("tests/fixtures/m6-remote.dsl").unwrap_err();
+        assert!(remote.contains("remote include is disabled"));
+        assert!(remote.contains("no network request was made"));
+        let opted_in = compile_file_with_options(
+            "tests/fixtures/m6-remote.dsl",
+            CompileOptions {
+                allow_network: true,
+                strict_safe: false,
+            },
+        )
+        .unwrap_err();
+        assert!(opted_in.contains("fetching is not implemented"));
+        assert!(opted_in.contains("no network request was made"));
+
+        let workspace = compile_file("tests/fixtures/m6-invalid-include.dsl").unwrap();
+        let error = validate(&workspace).unwrap_err();
+        assert!(error.contains("m6-invalid-part.dsl:1:"), "{error}");
+        assert!(error.contains("relationship source 'missing' is not defined"));
+
+        let directory = std::env::temp_dir().join(format!(
+            "c4c-m6-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("invalid.dsl"), [0xff]).unwrap();
+        fs::write(
+            directory.join("workspace.dsl"),
+            "workspace {\n  !include invalid.dsl\n}\n",
+        )
+        .unwrap();
+        let non_utf8 =
+            compile_file(&directory.join("workspace.dsl").to_string_lossy()).unwrap_err();
+        fs::remove_dir_all(&directory).unwrap();
+        assert!(non_utf8.contains("is not valid UTF-8"));
+    }
+
+    #[test]
+    fn evaluates_m6_boolean_and_property_expressions() {
+        let workspace = compile(
+            "workspace {\n  model {\n    keep = person Keep {\n      tags Keep\n      properties {\n        tier one\n      }\n    }\n    skip = person Skip {\n      tags Skip\n    }\n    system = softwareSystem System\n    keep -> system Uses \"\" Async\n  }\n  views {\n    systemLandscape selected {\n      include ( element.tag==Keep && ! element.tag==Skip ) || element.properties.tier==one\n      exclude relationship.tag==Async\n    }\n  }\n}\n",
+        )
+        .unwrap();
+        validate(&workspace).unwrap();
+        let expanded = expand_view(&workspace, &workspace.views[0]);
+        assert_eq!(expanded.elements, HashSet::from(["keep".into()]));
+        assert!(expanded.relationships.is_empty());
+
+        let unsupported = compile(
+            "workspace {\n  model {\n    keep = person Keep\n  }\n  views {\n    systemLandscape bad {\n      include element.name==Keep\n    }\n  }\n}\n",
+        )
+        .unwrap();
+        assert!(warnings(&unsupported).unwrap().contains("not evaluated"));
+        assert!(validate(&unsupported)
+            .unwrap_err()
+            .contains("unsupported expression field 'name'"));
+    }
+
+    #[test]
+    fn rejects_m6_executable_and_strict_unsafe_constructs() {
+        let error = compile_file("tests/fixtures/m6-unsafe.dsl").unwrap_err();
+        assert_eq!(error.matches("disabled and was not executed").count(), 4);
+        let strict = compile_file_with_options(
+            "tests/fixtures/m6-unsafe.dsl",
+            CompileOptions {
+                allow_network: false,
+                strict_safe: true,
+            },
+        )
+        .unwrap_err();
+        assert!(strict.contains("strict-safe mode rejects scripts and plugins"));
+        let assets = compile_file_with_options(
+            "tests/fixtures/m5-remote.dsl",
+            CompileOptions {
+                allow_network: false,
+                strict_safe: true,
+            },
+        )
+        .unwrap_err();
+        for message in ["theme", "icon", "branding logos", "branding fonts"] {
+            assert!(assets.contains(message), "{assets}");
         }
     }
 

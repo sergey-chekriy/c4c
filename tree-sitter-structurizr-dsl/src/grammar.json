@@ -8,8 +8,17 @@
         {
           "type": "REPEAT",
           "content": {
-            "type": "SYMBOL",
-            "name": "_newline"
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "SYMBOL",
+                "name": "_newline"
+              },
+              {
+                "type": "SYMBOL",
+                "name": "_preprocessor_directive"
+              }
+            ]
           }
         },
         {
@@ -164,6 +173,10 @@
         {
           "type": "SYMBOL",
           "name": "configuration_block"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_preprocessor_directive"
         },
         {
           "type": "SYMBOL",
@@ -329,6 +342,10 @@
         {
           "type": "SYMBOL",
           "name": "health_check_statement"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_preprocessor_directive"
         },
         {
           "type": "SYMBOL",
@@ -1373,6 +1390,89 @@
         }
       ]
     },
+    "_preprocessor_directive": {
+      "type": "CHOICE",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "include_directive"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "constant_directive"
+        }
+      ]
+    },
+    "include_directive": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "ALIAS",
+          "content": {
+            "type": "TOKEN",
+            "content": {
+              "type": "PREC",
+              "value": 2,
+              "content": {
+                "type": "PATTERN",
+                "value": "\\![iI][nN][cC][lL][uU][dD][eE]"
+              }
+            }
+          },
+          "named": true,
+          "value": "keyword"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "value"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_newline"
+        }
+      ]
+    },
+    "constant_directive": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "ALIAS",
+          "content": {
+            "type": "TOKEN",
+            "content": {
+              "type": "PREC",
+              "value": 2,
+              "content": {
+                "type": "PATTERN",
+                "value": "\\![cC][oO][nN][sS][tT][aA][nN][tT]"
+              }
+            }
+          },
+          "named": true,
+          "value": "keyword"
+        },
+        {
+          "type": "FIELD",
+          "name": "name",
+          "content": {
+            "type": "SYMBOL",
+            "name": "identifier"
+          }
+        },
+        {
+          "type": "FIELD",
+          "name": "value",
+          "content": {
+            "type": "SYMBOL",
+            "name": "value"
+          }
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_newline"
+        }
+      ]
+    },
     "views": {
       "type": "SEQ",
       "members": [
@@ -1497,6 +1597,10 @@
         {
           "type": "SYMBOL",
           "name": "terminology_block"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_preprocessor_directive"
         }
       ]
     },
@@ -2234,6 +2338,10 @@
         {
           "type": "SYMBOL",
           "name": "property_block"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "_preprocessor_directive"
         }
       ]
     },
@@ -2339,6 +2447,10 @@
         {
           "type": "STRING",
           "value": "||"
+        },
+        {
+          "type": "STRING",
+          "value": "!"
         },
         {
           "type": "STRING",
@@ -4050,8 +4162,23 @@
         {
           "type": "SYMBOL",
           "name": "string"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "substitution"
         }
       ]
+    },
+    "substitution": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PREC",
+        "value": 3,
+        "content": {
+          "type": "PATTERN",
+          "value": "\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}"
+        }
+      }
     },
     "color": {
       "type": "TOKEN",

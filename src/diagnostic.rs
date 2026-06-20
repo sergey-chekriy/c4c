@@ -39,15 +39,15 @@ impl Diagnostic {
     }
 
     pub fn render(&self, sources: &SourceMap) -> String {
-        let source = sources.get(self.span.source_id);
-        let (line, column) = source.line_column(self.span.start);
+        let (source, span) = sources.resolve(self.span);
+        let (line, column) = source.line_column(span.start);
         let text = source.line(line);
         let line_start = source.line_start(line);
-        let marker_start = source.text[line_start..self.span.start.min(line_start + text.len())]
+        let marker_start = source.text[line_start..span.start.min(line_start + text.len())]
             .chars()
             .count();
-        let marker_end = self.span.end.min(line_start + text.len());
-        let marker_width = source.text[self.span.start.min(marker_end)..marker_end]
+        let marker_end = span.end.min(line_start + text.len());
+        let marker_width = source.text[span.start.min(marker_end)..marker_end]
             .chars()
             .count()
             .max(1);

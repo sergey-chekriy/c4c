@@ -31,7 +31,7 @@ pub fn parse(source: &SourceFile) -> Result<Tree, Diagnostic> {
             "invalid Structurizr DSL syntax".into()
         };
         return Err(Diagnostic::error(span, message)
-            .with_help("check this statement against the supported M1-M5 grammar"));
+            .with_help("check this statement against the supported M1-M6 grammar"));
     }
     Ok(tree)
 }
@@ -120,10 +120,22 @@ mod tests {
             "tests/fixtures/m5-invalid.dsl",
             include_str!("../tests/fixtures/m5-invalid.dsl"),
         ),
+        (
+            "tests/fixtures/m6-preprocessing.dsl",
+            include_str!("../tests/fixtures/m6-preprocessing.dsl"),
+        ),
+        (
+            "tests/fixtures/m6-remote.dsl",
+            include_str!("../tests/fixtures/m6-remote.dsl"),
+        ),
+        (
+            "tests/fixtures/m6-unsafe.dsl",
+            include_str!("../tests/fixtures/m6-unsafe.dsl"),
+        ),
     ];
 
     #[test]
-    fn parses_all_m1_to_m5_fixtures_without_error_or_missing_nodes() {
+    fn parses_all_m1_to_m6_fixtures_without_error_or_missing_nodes() {
         for (path, text) in FIXTURES {
             let (sources, source_id) = SourceMap::from_text(*path, *text);
             let tree = parse(sources.get(source_id)).unwrap_or_else(|error| {

@@ -12,7 +12,10 @@ module.exports = grammar({
   extras: $ => [/[ \t\r]/, $.comment, $.line_continuation],
 
   rules: {
-    source_file: $ => seq(repeat($._newline), $.workspace),
+    source_file: $ => seq(
+      repeat(choice($._newline, $._preprocessor_directive)),
+      $.workspace,
+    ),
 
     workspace: $ => seq(
       kw($, 'workspace'),
@@ -35,6 +38,7 @@ module.exports = grammar({
       $.workspace_property,
       $.property_block,
       $.configuration_block,
+      $._preprocessor_directive,
       $.directive,
     ),
 
@@ -64,6 +68,7 @@ module.exports = grammar({
       $.perspectives_block,
       $.instance_of_statement,
       $.health_check_statement,
+      $._preprocessor_directive,
       $.directive,
     ),
 
@@ -174,6 +179,15 @@ module.exports = grammar({
       choice($._newline, $._generic_block),
     ),
 
+    _preprocessor_directive: $ => choice($.include_directive, $.constant_directive),
+    include_directive: $ => seq(kw($, '!include'), $.value, $._newline),
+    constant_directive: $ => seq(
+      kw($, '!constant'),
+      field('name', $.identifier),
+      field('value', $.value),
+      $._newline,
+    ),
+
     views: $ => seq(kw($, 'views'), $._views_block),
 
     _views_block: $ => seq(
@@ -198,6 +212,7 @@ module.exports = grammar({
       $.themes_statement,
       $.branding_block,
       $.terminology_block,
+      $._preprocessor_directive,
     ),
 
     system_landscape_view: $ => seq(
@@ -291,6 +306,7 @@ module.exports = grammar({
       $.view_title_statement,
       $.view_description_statement,
       $.property_block,
+      $._preprocessor_directive,
     ),
 
     include_statement: $ => seq(kw($, 'include'), repeat1($._selector), $._newline),
@@ -306,6 +322,7 @@ module.exports = grammar({
       '!=',
       '&&',
       '||',
+      '!',
       '(',
       ')',
     ),
@@ -474,7 +491,8 @@ module.exports = grammar({
     ),
 
     _style_value: $ => choice($.value, $.color),
-    value: $ => choice($.identifier, $.string),
+    value: $ => choice($.identifier, $.string, $.substitution),
+    substitution: _ => token(prec(3, /\$\{[A-Za-z_][A-Za-z0-9_]*\}/)),
     color: _ => token(prec(3, /#[0-9a-fA-F]{6}/)),
     order: _ => token(prec(3, /[0-9]+:/)),
     identifier: _ => token(prec(-1, /[A-Za-z0-9_.,:\/-]+/)),

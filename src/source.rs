@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SourceId(pub usize);
@@ -35,6 +35,14 @@ pub struct SourceFile {
     pub path: PathBuf,
     pub text: String,
     line_starts: Vec<usize>,
+    mappings: Vec<SourceSegment>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SourceSegment {
+    pub generated_start: usize,
+    pub generated_end: usize,
+    pub original: Span,
 }
 
 impl SourceFile {
@@ -46,6 +54,7 @@ impl SourceFile {
             path: path.into(),
             text,
             line_starts,
+            mappings: Vec::new(),
         }
     }
 
@@ -90,9 +99,15 @@ impl SourceMap {
         id
     }
 
-    pub fn add_file(&mut self, path: &str) -> Result<SourceId, String> {
-        let text = fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
-        Ok(self.add_text(path, text))
+    pub fn add_generated(
+        &mut self,
+        path: impl Into<PathBuf>,
+        text: String,
+        mappings: Vec<SourceSegment>,
+    ) -> SourceId {
+        let id = self.add_text(path, text);
+        self.files[id.0].mappings = mappings;
+        id
     }
 
     #[cfg(test)]
@@ -104,5 +119,31 @@ impl SourceMap {
 
     pub fn get(&self, id: SourceId) -> &SourceFile {
         &self.files[id.0]
+    }
+
+    pub fn resolve(&self, span: Span) -> (&SourceFile, Span) {
+        let generated = self.get(span.source_id);
+        let Some(segment) = generated
+            .mappings
+            .iter()
+            .find(|segment| {
+                span.start >= segment.generated_start && span.start < segment.generated_end
+            })
+            .or_else(|| {
+                (span.start == generated.text.len())
+                    .then(|| generated.mappings.last())
+                    .flatten()
+            })
+        else {
+            return (generated, span);
+        };
+        let offset = span.start - segment.generated_start;
+        let start = (segment.original.start + offset).min(segment.original.end.saturating_sub(1));
+        let width = span.end.saturating_sub(span.start).max(1);
+        let end = (start + width).min(segment.original.end).max(start + 1);
+        (
+            self.get(segment.original.source_id),
+            Span::new(segment.original.source_id, start, end),
+        )
     }
 }

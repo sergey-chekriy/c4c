@@ -3,6 +3,7 @@ mod diagnostic;
 mod handwritten_parser;
 mod lexer;
 mod parser;
+mod preprocessor;
 mod source;
 mod tree_sitter_parser;
 use std::{env, fs, path::Path};
@@ -22,8 +23,18 @@ fn run() -> Result<(), String> {
     let cmd = &args[1];
     let input = &args[2];
     let allow_network = args.iter().any(|arg| arg == "--allow-network");
-    let ws = if allow_network {
-        compiler::compile_file_with_options(input, compiler::CompileOptions { allow_network })?
+    let strict_safe = args.iter().any(|arg| arg == "--strict-safe");
+    if allow_network && strict_safe {
+        return Err("--strict-safe conflicts with --allow-network".into());
+    }
+    let ws = if allow_network || strict_safe {
+        compiler::compile_file_with_options(
+            input,
+            compiler::CompileOptions {
+                allow_network,
+                strict_safe,
+            },
+        )?
     } else {
         compiler::compile_file(input)?
     };
@@ -69,7 +80,7 @@ fn arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
 
 fn usage() -> Result<(), String> {
     Err(
-        "usage: c4c <validate|inspect|export> <workspace.dsl> [--format mermaid] [--out out] [--allow-network]"
+        "usage: c4c <validate|inspect|export> <workspace.dsl> [--format mermaid] [--out out] [--strict-safe] [--allow-network]"
             .into(),
     )
 }

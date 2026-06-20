@@ -36,6 +36,8 @@ Status: implemented with validated semantic metadata, safe offline references, t
 
 Implement includes, constants, substitution, expressions, scripts/plugins as safe parsed constructs, and explicit network opt-in for URL usage.
 
+Status: implemented with source-mapped local includes, deterministic directories, constants, a safe selector-expression subset, and strict rejection without network or code execution.
+
 ## M7 — documentation and ADRs
 
 Import Markdown/AsciiDoc documentation and ADRs; generate static documentation site.

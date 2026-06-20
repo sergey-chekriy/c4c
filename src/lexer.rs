@@ -15,6 +15,7 @@ pub enum TokenKind {
     NotEquals,
     And,
     Or,
+    Not,
     LeftParen,
     RightParen,
     Arrow,
@@ -107,7 +108,8 @@ impl Lexer<'_> {
                         break;
                     }
                 }
-                '!' => self.bang(start),
+                '!' if self.directive_position() => self.bang(start),
+                '!' => self.single(TokenKind::Not, start),
                 character if is_identifier(character) => self.identifier(start),
                 character => {
                     self.advance();
@@ -266,6 +268,12 @@ impl Lexer<'_> {
     fn advance(&mut self) {
         self.offset += self.current().len_utf8();
     }
+
+    fn directive_position(&self) -> bool {
+        self.tokens
+            .last()
+            .is_none_or(|token| matches!(token.kind, TokenKind::Newline))
+    }
 }
 
 fn is_identifier(character: char) -> bool {
@@ -279,6 +287,7 @@ fn expression_token(kind: &TokenKind) -> bool {
             | TokenKind::NotEquals
             | TokenKind::And
             | TokenKind::Or
+            | TokenKind::Not
             | TokenKind::LeftParen
             | TokenKind::RightParen
     )
