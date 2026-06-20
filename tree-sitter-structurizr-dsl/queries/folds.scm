@@ -1,0 +1,16 @@
+[
+  (workspace)
+  (model)
+  (views)
+  (element_declaration)
+  (relationship)
+  (system_landscape_view)
+  (system_context_view)
+  (container_view)
+  (component_view)
+  (filtered_view)
+  (dynamic_view)
+  (deployment_view)
+  (custom_view)
+  (image_view)
+] @fold

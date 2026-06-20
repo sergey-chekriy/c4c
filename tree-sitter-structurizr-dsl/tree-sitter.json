@@ -1,0 +1,31 @@
+{
+  "grammars": [
+    {
+      "name": "structurizr_dsl",
+      "camelcase": "StructurizrDsl",
+      "title": "Structurizr DSL",
+      "scope": "source.structurizr-dsl",
+      "file-types": ["dsl"],
+      "injection-regex": "^structurizr(-dsl)?$",
+      "class-name": "TreeSitterStructurizrDsl"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Tree-sitter grammar for the Structurizr DSL subset supported by c4c",
+    "authors": [
+      {
+        "name": "c4c contributors"
+      }
+    ]
+  },
+  "bindings": {
+    "c": true,
+    "go": false,
+    "node": false,
+    "python": false,
+    "rust": false,
+    "swift": false
+  }
+}

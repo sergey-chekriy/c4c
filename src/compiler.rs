@@ -1,6 +1,6 @@
 use crate::{
     diagnostic::{render_all, Diagnostic},
-    lexer, parser,
+    parser,
     source::{SourceMap, Span},
 };
 use std::{
@@ -308,9 +308,7 @@ fn compile_sources_with_identifiers(
     source_id: crate::source::SourceId,
     identifiers: &str,
 ) -> Result<Workspace, String> {
-    let tokens = lexer::lex(sources.get(source_id))
-        .map_err(|diagnostics| render_all(&diagnostics, sources))?;
-    parser::parse(sources, source_id, tokens, identifiers)
+    parser::parse(sources, source_id, identifiers)
 }
 
 fn compile_path(

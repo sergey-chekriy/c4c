@@ -20,6 +20,12 @@ Implement system landscape, system context, container, component, filtered, dyna
 
 Status: implemented with deterministic static/filtered/deployment expansion, Mermaid graph/sequence export, and explicit warnings for deferred rendering semantics.
 
+## M4.5 — Tree-sitter syntax frontend
+
+Use a committed Tree-sitter grammar as the syntax source of truth while preserving the Rust semantic model, validation, diagnostics, view expansion, and exporters.
+
+Status: implemented behind the default parser facade, with the handwritten parser retained as the CST-to-semantic-model compatibility adapter until direct mapping reaches parity.
+
 ## M5 — style/theme layer
 
 Implement styles, themes, branding, terminology, light/dark styling, element styles, and relationship styles.

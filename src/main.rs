@@ -1,8 +1,10 @@
 mod compiler;
 mod diagnostic;
+mod handwritten_parser;
 mod lexer;
 mod parser;
 mod source;
+mod tree_sitter_parser;
 use std::{env, fs, path::Path};
 
 fn main() {

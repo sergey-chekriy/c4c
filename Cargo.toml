@@ -6,3 +6,8 @@ description = "Local Structurizr DSL compiler prototype"
 license = "MIT"
 
 [dependencies]
+tree-sitter = "0.25.10"
+tree-sitter-language = "0.1.5"
+
+[build-dependencies]
+cc = "1.2"

@@ -9,7 +9,7 @@ Goal: parse Structurizr-style C4 architecture-as-code, validate it locally, and 
 Implemented in this repo:
 
 - CLI with `validate`, `inspect`, and `export` commands.
-- Hand-written lexer/parser for a useful Structurizr DSL subset.
+- Tree-sitter grammar as the syntax source of truth, with the proven handwritten parser retained as the semantic-model adapter during parity migration.
 - Workspace parsing with optional name and description.
 - `!identifiers hierarchical`.
 - `model` block.
@@ -42,6 +42,13 @@ Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
 - Static, filtered, dynamic, and deployment view validation and deterministic expansion.
 - Mermaid graph/sequence output while preserving M1 System Context bubbling.
 - Safe local image metadata preservation and rejection of remote image/rendering URLs.
+
+## Milestone 4.5 additions
+
+- Committed Tree-sitter grammar and generated parser for all supported M1-M4 syntax.
+- Tree-sitter-first parser facade with CST validation before existing semantic model construction.
+- Minimal highlighting, folding, and locals queries for future editor support.
+- Fixture-wide CST and semantic parity tests.
 
 M5+ style semantics, preprocessing, documentation rendering, and additional exporters remain deferred.
 
@@ -108,15 +115,15 @@ Compiler pipeline:
 ```text
 workspace.dsl
   -> preprocessor
-  -> lexer
-  -> parser
+  -> Tree-sitter CST
+  -> semantic-model adapter
   -> AST / workspace model
   -> semantic validator
   -> view model
   -> exporters
 ```
 
-The compiler now has a span-aware lexer/parser, source diagnostics, semantic validation, core model grammar, and M4 view expansion. Style semantics, preprocessing, documentation rendering, and additional exporters are planned in later milestones.
+The compiler now has a Tree-sitter syntax frontend, span-aware compatibility adapter, source diagnostics, semantic validation, core model grammar, and M4 view expansion. Style semantics, preprocessing, documentation rendering, and additional exporters are planned in later milestones.
 
 ## Offline/security policy
 
