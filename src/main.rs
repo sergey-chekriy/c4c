@@ -1,5 +1,6 @@
 mod compiler;
 mod diagnostic;
+mod documentation;
 mod handwritten_parser;
 mod lexer;
 mod parser;
@@ -17,11 +18,13 @@ fn main() {
 
 fn run() -> Result<(), String> {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 3 {
-        return usage();
-    }
-    let cmd = &args[1];
-    let input = &args[2];
+    let (cmd, input) = match args.as_slice() {
+        [_, command, input, ..] if command != "adr" => (command.as_str(), input.as_str()),
+        [_, command, action, input, ..] if command == "adr" && action == "list" => {
+            ("adr-list", input.as_str())
+        }
+        _ => return usage(),
+    };
     let allow_network = args.iter().any(|arg| arg == "--allow-network");
     let strict_safe = args.iter().any(|arg| arg == "--strict-safe");
     if allow_network && strict_safe {
@@ -41,7 +44,7 @@ fn run() -> Result<(), String> {
     if let Some(warnings) = compiler::warnings(&ws) {
         eprintln!("{warnings}");
     }
-    match cmd.as_str() {
+    match cmd {
         "validate" => {
             compiler::validate(&ws)?;
             println!(
@@ -69,6 +72,14 @@ fn run() -> Result<(), String> {
                 }
             }
         }
+        "docs" => {
+            compiler::validate(&ws)?;
+            compiler::export_site(&ws, Path::new(arg_value(&args, "--out").unwrap_or("site")))?;
+        }
+        "adr-list" => {
+            compiler::validate(&ws)?;
+            print!("{}", compiler::adr_list(&ws));
+        }
         _ => return usage(),
     }
     Ok(())
@@ -80,7 +91,7 @@ fn arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
 
 fn usage() -> Result<(), String> {
     Err(
-        "usage: c4c <validate|inspect|export> <workspace.dsl> [--format mermaid] [--out out] [--strict-safe] [--allow-network]"
+        "usage: c4c <validate|inspect|export|docs> <workspace.dsl> [--format mermaid] [--out out] [--strict-safe] [--allow-network]\n       c4c adr list <workspace.dsl> [--strict-safe]"
             .into(),
     )
 }

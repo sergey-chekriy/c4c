@@ -8,7 +8,7 @@ Goal: parse Structurizr-style C4 architecture-as-code, validate it locally, and 
 
 Implemented in this repo:
 
-- CLI with `validate`, `inspect`, and `export` commands.
+- CLI with `validate`, `inspect`, `export`, `docs`, and `adr list` commands.
 - Tree-sitter grammar as the syntax source of truth, with the proven handwritten parser retained as the semantic-model adapter during parity migration.
 - Workspace parsing with optional name and description.
 - `!identifiers hierarchical`.
@@ -28,6 +28,8 @@ Implemented in this repo:
 - Safe local file/directory includes, constants, source-mapped substitution, and deterministic dependency tracking.
 - Element/relationship selector expressions with tag, type, property, boolean, and comparison operators.
 - Strict-safe validation and explicit rejection of remote includes, scripts, and plugins without execution.
+- Safe local Markdown/AsciiDoc and ADR import attached to workspaces, software systems, and containers.
+- Deterministic local static documentation sites with escaped HTML and raw Mermaid artifacts.
 
 
 Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
@@ -69,7 +71,14 @@ Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
 - Safe expression evaluation for view selectors and `--strict-safe` supply-chain validation.
 - Scripts/plugins and remote includes are parsed but never executed or fetched.
 
-M7+ documentation rendering and additional exporters remain deferred.
+## Milestone 7 additions
+
+- Local `!docs` imports for Markdown directories/files and escaped AsciiDoc text.
+- Local `!adrs` imports for adr-tools Markdown plus partial MADR/Log4brains metadata.
+- `docs` static-site generation with local CSS, escaped content, and local `.mmd` diagrams.
+- Deterministic `adr list` terminal output and strict-safe rejection of custom importers.
+
+M8+ additional exporters remain deferred.
 
 ## Build
 
@@ -110,6 +119,8 @@ make check
 cargo run -- validate examples/internet-banking.dsl
 cargo run -- inspect examples/internet-banking.dsl
 cargo run -- export examples/internet-banking.dsl --format mermaid --out out
+cargo run -- docs tests/fixtures/m7-docs.dsl --out site
+cargo run -- adr list tests/fixtures/m7-docs.dsl
 ```
 
 After export:
@@ -169,7 +180,7 @@ workspace.dsl
   -> exporters
 ```
 
-The compiler now has a Tree-sitter syntax frontend, safe preprocessing, span-aware source diagnostics, semantic validation, core model grammar, M4 view expansion, and M5 styling. Documentation rendering and additional exporters are planned in later milestones.
+The compiler now has a Tree-sitter syntax frontend, safe preprocessing, span-aware source diagnostics, semantic validation, view expansion, styling, and local documentation/ADR site generation. Additional exporters are planned in later milestones.
 
 ## Offline/security policy
 
@@ -181,6 +192,7 @@ The project should remain local-first:
 - No cloud dependency.
 - Remote `!include <url>` is rejected without making a request; `--allow-network` is parsed but fetching remains unimplemented.
 - `--strict-safe` rejects remote assets and executable directives.
+- Documentation imports are confined below the declaring DSL file and never load custom classes or remote content.
 
 ## License
 

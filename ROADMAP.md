@@ -48,6 +48,8 @@ Status: implemented with documented Make targets, committed generated artifacts,
 
 Import Markdown/AsciiDoc documentation and ADRs; generate static documentation site.
 
+Status: implemented with secure local imports, adr-tools-compatible records, escaped static HTML, local Mermaid sources, and deterministic ADR listing.
+
 ## M8 — exporters
 
 Support JSON, Mermaid, D2, PlantUML, C4-PlantUML, DOT, SVG/PNG, Draw.io, Markdown, and static HTML.

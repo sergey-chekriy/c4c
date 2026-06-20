@@ -118,7 +118,6 @@ impl Parser {
             self.parse_identifiers();
         } else if self.at_bang("docs") || self.at_bang("adrs") {
             let directive = self.parse_directive();
-            self.warn_deferred(&directive, "documentation import is deferred to M7");
             self.workspace.directives.push(directive);
         } else if self.at_bang("script") || self.at_bang("plugin") {
             self.parse_unsafe_directive();
@@ -214,7 +213,11 @@ impl Parser {
         }
         if self.at_bang("docs") || self.at_bang("adrs") {
             let directive = self.parse_directive();
-            self.warn_deferred(&directive, "documentation import is deferred to M7");
+            self.error(
+                directive.span,
+                format!("!{} is not allowed directly in the model", directive.name),
+                Some("attach documentation to the workspace, a software system, or a container"),
+            );
             self.workspace.directives.push(directive);
             return;
         }
@@ -522,7 +525,6 @@ impl Parser {
             self.parse_health_check(index);
         } else if self.at_bang("docs") || self.at_bang("adrs") {
             let directive = self.parse_directive();
-            self.warn_deferred(&directive, "documentation import is deferred to M7");
             self.workspace.elements[index].directives.push(directive);
         } else if self.at_bang("components") {
             let directive = self.parse_directive();

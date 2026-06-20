@@ -1,0 +1,5 @@
+= API guide
+
+The API is implemented in Rust.
+
+<script>this remains text</script>

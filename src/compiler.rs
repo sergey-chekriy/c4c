@@ -1,6 +1,6 @@
 use crate::{
     diagnostic::{render_all, Diagnostic},
-    parser,
+    documentation, parser,
     preprocessor::{self, IncludeDependency},
     source::{SourceMap, Span},
 };
@@ -35,6 +35,8 @@ pub struct Workspace {
     pub branding: Option<Branding>,
     pub terminology: Vec<Property>,
     pub dependencies: Vec<IncludeDependency>,
+    pub documentation: Vec<DocumentationSection>,
+    pub decisions: Vec<DecisionRecord>,
     pub warnings: Vec<Diagnostic>,
     pub span: Span,
     pub source_map: SourceMap,
@@ -66,6 +68,8 @@ impl Workspace {
             branding: None,
             terminology: Vec::new(),
             dependencies: Vec::new(),
+            documentation: Vec::new(),
+            decisions: Vec::new(),
             warnings: Vec::new(),
             span,
             source_map,
@@ -239,6 +243,49 @@ pub struct Directive {
     pub span: Span,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum DocumentationOwner {
+    Workspace,
+    Element(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DocumentationFormat {
+    Markdown,
+    AsciiDoc,
+}
+
+#[derive(Debug, Clone)]
+pub struct DocumentationSection {
+    pub owner: DocumentationOwner,
+    pub source_path: PathBuf,
+    pub title: String,
+    pub format: DocumentationFormat,
+    pub order: usize,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DecisionFormat {
+    AdrTools,
+    Madr,
+    Log4brains,
+    MarkdownGeneric,
+}
+
+#[derive(Debug, Clone)]
+pub struct DecisionRecord {
+    pub owner: DocumentationOwner,
+    pub id: String,
+    pub title: String,
+    pub status: Option<String>,
+    pub date: Option<String>,
+    pub source_path: PathBuf,
+    pub content: String,
+    pub format: DecisionFormat,
+    pub order: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct PreservedBlock {
     pub name: String,
@@ -347,6 +394,7 @@ pub fn compile_file_with_options(path: &str, options: CompileOptions) -> Result<
     let mut stack = Vec::new();
     let mut workspace = compile_path(Path::new(path), &mut sources, options, &mut stack)?;
     workspace.source_map = sources;
+    documentation::import(&mut workspace, options.strict_safe)?;
     if options.strict_safe {
         enforce_strict_safe(&workspace)?;
     }
@@ -507,6 +555,8 @@ fn merge_workspaces(mut base: Workspace, mut derived: Workspace, sources: Source
     base.themes.extend(derived.themes);
     base.terminology.extend(derived.terminology);
     base.dependencies.extend(derived.dependencies);
+    base.documentation.extend(derived.documentation);
+    base.decisions.extend(derived.decisions);
     base.warnings.extend(derived.warnings);
     base
 }
@@ -1511,6 +1561,13 @@ pub fn inspect(workspace: &Workspace) -> String {
             ));
         }
     }
+    if !workspace.documentation.is_empty() || !workspace.decisions.is_empty() {
+        output.push_str(&format!(
+            "m7 documentation: sections={} decisions={}\n",
+            workspace.documentation.len(),
+            workspace.decisions.len()
+        ));
+    }
     if workspace.extension.is_some()
         || !workspace.properties.is_empty()
         || !workspace.directives.is_empty()
@@ -1624,7 +1681,15 @@ pub fn export_mermaid(workspace: &Workspace, output: &Path) -> Result<(), String
     Ok(())
 }
 
-fn mermaid(workspace: &Workspace, view: &View) -> String {
+pub fn export_site(workspace: &Workspace, output: &Path) -> Result<(), String> {
+    documentation::export_site(workspace, output)
+}
+
+pub fn adr_list(workspace: &Workspace) -> String {
+    documentation::adr_list(workspace)
+}
+
+pub(crate) fn mermaid(workspace: &Workspace, view: &View) -> String {
     if view.kind == ViewKind::Dynamic {
         return dynamic_mermaid(workspace, view);
     }
@@ -2506,7 +2571,7 @@ fn software_system_of<'a>(workspace: &'a Workspace, identifier: &str) -> Option<
     None
 }
 
-fn default_view_key(kind: &ViewKind) -> &'static str {
+pub(crate) fn default_view_key(kind: &ViewKind) -> &'static str {
     match kind {
         ViewKind::SystemLandscape => "system-landscape",
         ViewKind::SystemContext => "system-context",
