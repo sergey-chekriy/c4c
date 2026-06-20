@@ -30,6 +30,8 @@ Implemented in this repo:
 - Strict-safe validation and explicit rejection of remote includes, scripts, and plugins without execution.
 - Safe local Markdown/AsciiDoc and ADR import attached to workspaces, software systems, and containers.
 - Deterministic local static documentation sites with escaped HTML and raw Mermaid artifacts.
+- Deterministic JSON, Mermaid, D2, PlantUML, C4-PlantUML, Graphviz DOT, Draw.io, ArchiMate, and HTML exporters.
+- Optional SVG/PNG generation through an explicitly requested local Graphviz renderer.
 
 
 Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
@@ -78,7 +80,14 @@ Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
 - `docs` static-site generation with local CSS, escaped content, and local `.mmd` diagrams.
 - Deterministic `adr list` terminal output and strict-safe rejection of custom importers.
 
-M8+ additional exporters remain deferred.
+## Milestone 8 additions
+
+- A dependency-free exporter layer with deterministic filenames, ordering, IDs, and escaping.
+- Structurizr-compatible JSON subset with c4c metadata for model, styles, views, docs, and ADRs.
+- Per-view D2, generic PlantUML, local-macro C4-PlantUML, DOT, and importable Draw.io XML.
+- ArchiMate 3.0 Model Exchange XML using a conservative C4 mapping and preserved c4c properties.
+- `--format html` delegates to the M7 static site generator without changing `docs` behavior.
+- SVG/PNG use only the local Graphviz `dot` executable and are rejected by `--strict-safe`.
 
 ## Build
 
@@ -119,6 +128,14 @@ make check
 cargo run -- validate examples/internet-banking.dsl
 cargo run -- inspect examples/internet-banking.dsl
 cargo run -- export examples/internet-banking.dsl --format mermaid --out out
+cargo run -- export examples/internet-banking.dsl --format json --out out-json
+cargo run -- export examples/internet-banking.dsl --format d2 --out out-d2
+cargo run -- export examples/internet-banking.dsl --format plantuml --out out-plantuml
+cargo run -- export examples/internet-banking.dsl --format c4plantuml --out out-c4plantuml
+cargo run -- export examples/internet-banking.dsl --format dot --out out-dot
+cargo run -- export examples/internet-banking.dsl --format drawio --out out-drawio
+cargo run -- export examples/internet-banking.dsl --format archimate --out out-archimate
+cargo run -- export tests/fixtures/m7-docs.dsl --format html --out out-html
 cargo run -- docs tests/fixtures/m7-docs.dsl --out site
 cargo run -- adr list tests/fixtures/m7-docs.dsl
 ```
@@ -180,7 +197,34 @@ workspace.dsl
   -> exporters
 ```
 
-The compiler now has a Tree-sitter syntax frontend, safe preprocessing, span-aware source diagnostics, semantic validation, view expansion, styling, and local documentation/ADR site generation. Additional exporters are planned in later milestones.
+The compiler now has a Tree-sitter syntax frontend, safe preprocessing, span-aware source diagnostics, semantic validation, view expansion, styling, local documentation/ADR site generation, and a deterministic local exporter layer.
+
+## Export formats
+
+Text exports require no renderer or network access:
+
+| Format | Output |
+| --- | --- |
+| `json`, `structurizr-json` | `workspace.json` |
+| `mermaid`, `mmd` | `<view-key>.mmd` |
+| `d2` | `<view-key>.d2` |
+| `plantuml`, `puml` | `<view-key>.puml` |
+| `c4plantuml`, `c4-plantuml` | `<view-key>.puml` |
+| `dot`, `graphviz` | `<view-key>.dot` |
+| `drawio`, `draw.io` | `<view-key>.drawio` |
+| `archimate`, `archimate-xml`, `opengroup-archimate` | `workspace.archimate.xml` |
+| `html`, `site` | M7 static site |
+
+The JSON output is a documented Structurizr-compatible subset; the `c4c` object preserves
+the complete element kinds and local metadata. Draw.io uses a deterministic grid layout.
+ArchiMate export is a pragmatic exchange mapping, not full semantic equivalence: people map
+to `BusinessActor`, C4 software concepts to `ApplicationComponent`, deployment/infrastructure
+nodes to `Node`, generic/deployment grouping concepts to `Grouping`, and relationships to the
+conservative `Association` type. ArchiMate visual views are deferred.
+
+`svg` and `png` explicitly run the local Graphviz `dot` binary. If it is absent, c4c reports an
+installation hint and does not contact a remote service. `--strict-safe` rejects all renderer
+execution; use `dot`, `mermaid`, or another text format instead.
 
 ## Offline/security policy
 
@@ -190,6 +234,7 @@ The project should remain local-first:
 - No network calls by default.
 - No remote rendering.
 - No cloud dependency.
+- Text exporters never execute external binaries; SVG/PNG may execute only local Graphviz after an explicit request.
 - Remote `!include <url>` is rejected without making a request; `--allow-network` is parsed but fetching remains unimplemented.
 - `--strict-safe` rejects remote assets and executable directives.
 - Documentation imports are confined below the declaring DSL file and never load custom classes or remote content.

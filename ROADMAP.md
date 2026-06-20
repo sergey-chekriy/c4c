@@ -52,7 +52,10 @@ Status: implemented with secure local imports, adr-tools-compatible records, esc
 
 ## M8 — exporters
 
-Support JSON, Mermaid, D2, PlantUML, C4-PlantUML, DOT, SVG/PNG, Draw.io, Markdown, and static HTML.
+Support JSON, Mermaid, D2, PlantUML, C4-PlantUML, DOT, SVG/PNG, Draw.io, ArchiMate XML, and static HTML.
+
+Status: implemented with deterministic text exporters, M7 site delegation, a conservative
+ArchiMate 3.0 exchange mapping, and explicit local-only Graphviz rendering policy.
 
 ## M9 — compatibility suite
 
@@ -64,7 +67,7 @@ Local-only LSP for diagnostics, completion, hover, references, rename, semantic 
 
 ## M11 — Archi/ArchiMate bridge
 
-Optional import/export bridge while keeping ArchiMate semantics outside the C4 compiler core.
+Optional ArchiMate import and richer view/layout bridge while keeping ArchiMate semantics outside the C4 compiler core.
 
 ## M12 — release engineering
 

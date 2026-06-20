@@ -1,13 +1,14 @@
 mod compiler;
 mod diagnostic;
 mod documentation;
+mod exporters;
 mod handwritten_parser;
 mod lexer;
 mod parser;
 mod preprocessor;
 mod source;
 mod tree_sitter_parser;
-use std::{env, fs, path::Path};
+use std::{env, path::Path};
 
 fn main() {
     if let Err(e) = run() {
@@ -62,15 +63,12 @@ fn run() -> Result<(), String> {
             compiler::validate(&ws)?;
             let format = arg_value(&args, "--format").unwrap_or("mermaid");
             let out = arg_value(&args, "--out").unwrap_or("out");
-            fs::create_dir_all(out).map_err(|e| format!("cannot create {out}: {e}"))?;
-            match format {
-                "mermaid" | "mmd" => compiler::export_mermaid(&ws, Path::new(out))?,
-                _ => {
-                    return Err(format!(
-                        "unsupported format '{format}' in M1; supported: mermaid"
-                    ))
-                }
-            }
+            exporters::export(
+                &ws,
+                format,
+                Path::new(out),
+                exporters::ExportOptions { strict_safe },
+            )?;
         }
         "docs" => {
             compiler::validate(&ws)?;
@@ -91,7 +89,7 @@ fn arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
 
 fn usage() -> Result<(), String> {
     Err(
-        "usage: c4c <validate|inspect|export|docs> <workspace.dsl> [--format mermaid] [--out out] [--strict-safe] [--allow-network]\n       c4c adr list <workspace.dsl> [--strict-safe]"
+        "usage: c4c <validate|inspect> <workspace.dsl> [--strict-safe] [--allow-network]\n       c4c export <workspace.dsl> [--format json|mermaid|d2|plantuml|c4plantuml|dot|drawio|archimate|html|svg|png] [--out out] [--strict-safe]\n       c4c docs <workspace.dsl> [--out site] [--strict-safe]\n       c4c adr list <workspace.dsl> [--strict-safe]"
             .into(),
     )
 }

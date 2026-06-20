@@ -31,7 +31,7 @@ pub fn parse(source: &SourceFile) -> Result<Tree, Diagnostic> {
             "invalid Structurizr DSL syntax".into()
         };
         return Err(Diagnostic::error(span, message)
-            .with_help("check this statement against the supported M1-M7 grammar"));
+            .with_help("check this statement against the supported M1-M8 grammar"));
     }
     Ok(tree)
 }
@@ -137,6 +137,10 @@ mod tests {
             include_str!("../tests/fixtures/m7-docs.dsl"),
         ),
         (
+            "tests/fixtures/m8-exporters.dsl",
+            include_str!("../tests/fixtures/m8-exporters.dsl"),
+        ),
+        (
             "tests/fixtures/m7-custom-importer.dsl",
             include_str!("../tests/fixtures/m7-custom-importer.dsl"),
         ),
@@ -147,7 +151,7 @@ mod tests {
     ];
 
     #[test]
-    fn parses_all_m1_to_m7_fixtures_without_error_or_missing_nodes() {
+    fn parses_all_m1_to_m8_fixtures_without_error_or_missing_nodes() {
         for (path, text) in FIXTURES {
             let (sources, source_id) = SourceMap::from_text(*path, *text);
             let tree = parse(sources.get(source_id)).unwrap_or_else(|error| {

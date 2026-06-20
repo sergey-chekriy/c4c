@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<model xmlns="http://www.opengroup.org/xsd/archimate/3.0/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" identifier="id-c4c-workspace">
+  <name xml:lang="en">Internet Banking</name>
+  <documentation xml:lang="en">Milestone 1 example</documentation>
+  <elements>
+    <element identifier="id-element-1-customer" xsi:type="BusinessActor">
+      <name xml:lang="en">Customer</name>
+      <documentation xml:lang="en">A bank customer</documentation>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">customer</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Person</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">A bank customer</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/examples/internet-banking.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-2-bank" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Internet Banking System</name>
+      <documentation xml:lang="en">Allows customers to view accounts and make payments</documentation>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">bank</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">SoftwareSystem</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">Allows customers to view accounts and make payments</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/examples/internet-banking.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-3-bank.web" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Web Application</name>
+      <documentation xml:lang="en">Customer-facing SPA</documentation>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">bank.web</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Container</value></property>
+        <property propertyDefinitionRef="property-parent"><value xml:lang="en">bank</value></property>
+        <property propertyDefinitionRef="property-technology"><value xml:lang="en">React</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">Customer-facing SPA</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/examples/internet-banking.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-4-bank.api" xsi:type="ApplicationComponent">
+      <name xml:lang="en">API Application</name>
+      <documentation xml:lang="en">Backend API</documentation>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">bank.api</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Container</value></property>
+        <property propertyDefinitionRef="property-parent"><value xml:lang="en">bank</value></property>
+        <property propertyDefinitionRef="property-technology"><value xml:lang="en">Rust</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">Backend API</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/examples/internet-banking.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-5-bank.db" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Database</name>
+      <documentation xml:lang="en">Stores audit/profile data</documentation>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">bank.db</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Container</value></property>
+        <property propertyDefinitionRef="property-parent"><value xml:lang="en">bank</value></property>
+        <property propertyDefinitionRef="property-technology"><value xml:lang="en">PostgreSQL</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">Stores audit/profile data</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/examples/internet-banking.dsl</value></property>
+      </properties>
+    </element>
+  </elements>
+  <relationships>
+    <relationship identifier="id-relationship-1" source="id-element-1-customer" target="id-element-3-bank.web" xsi:type="Association">
+      <name xml:lang="en">Uses</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-1</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">Uses</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/examples/internet-banking.dsl</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="id-relationship-2" source="id-element-3-bank.web" target="id-element-4-bank.api" xsi:type="Association">
+      <name xml:lang="en">Calls</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-2</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-technology"><value xml:lang="en">HTTPS/JSON</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">Calls</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/examples/internet-banking.dsl</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="id-relationship-3" source="id-element-4-bank.api" target="id-element-5-bank.db" xsi:type="Association">
+      <name xml:lang="en">Reads/writes</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-3</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-technology"><value xml:lang="en">SQL</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">Reads/writes</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/examples/internet-banking.dsl</value></property>
+      </properties>
+    </relationship>
+  </relationships>
+  <propertyDefinitions>
+    <propertyDefinition identifier="property-id" type="string"><name xml:lang="en">c4c.id</name></propertyDefinition>
+    <propertyDefinition identifier="property-kind" type="string"><name xml:lang="en">c4c.kind</name></propertyDefinition>
+    <propertyDefinition identifier="property-parent" type="string"><name xml:lang="en">c4c.parent</name></propertyDefinition>
+    <propertyDefinition identifier="property-technology" type="string"><name xml:lang="en">c4c.technology</name></propertyDefinition>
+    <propertyDefinition identifier="property-tags" type="string"><name xml:lang="en">c4c.tags</name></propertyDefinition>
+    <propertyDefinition identifier="property-description" type="string"><name xml:lang="en">c4c.description</name></propertyDefinition>
+    <propertyDefinition identifier="property-source" type="string"><name xml:lang="en">c4c.source</name></propertyDefinition>
+  </propertyDefinitions>
+</model>

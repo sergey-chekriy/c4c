@@ -41,6 +41,7 @@ mod tests {
             include_str!("../tests/fixtures/m3-core.dsl"),
             include_str!("../tests/fixtures/m4-views.dsl"),
             include_str!("../tests/fixtures/m5-styles.dsl"),
+            include_str!("../tests/fixtures/m8-exporters.dsl"),
         ] {
             let (sources, source_id) = SourceMap::from_text("parity.dsl", source);
             let tokens = lexer::lex(sources.get(source_id)).unwrap();

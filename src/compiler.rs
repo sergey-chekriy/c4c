@@ -2151,6 +2151,87 @@ struct ExpandedView {
     relationships: HashSet<usize>,
 }
 
+pub(crate) struct ViewGraph {
+    pub element_ids: Vec<String>,
+    pub relationships: Vec<ViewGraphRelationship>,
+}
+
+pub(crate) struct ViewGraphRelationship {
+    pub source: String,
+    pub destination: String,
+    pub description: String,
+    pub relationship_index: Option<usize>,
+}
+
+pub(crate) fn view_graph(workspace: &Workspace, view: &View) -> ViewGraph {
+    if view.kind == ViewKind::Dynamic {
+        let mut identifiers = HashSet::new();
+        let relationships = view
+            .dynamic_relationships
+            .iter()
+            .filter_map(|relationship| {
+                let (source, destination) = (&relationship.source, &relationship.destination);
+                let (Some(source), Some(destination)) = (source, destination) else {
+                    return None;
+                };
+                identifiers.insert(source.identifier.clone());
+                identifiers.insert(destination.identifier.clone());
+                Some(ViewGraphRelationship {
+                    source: source.identifier.clone(),
+                    destination: destination.identifier.clone(),
+                    description: relationship.description.clone().unwrap_or_default(),
+                    relationship_index: None,
+                })
+            })
+            .collect();
+        return ViewGraph {
+            element_ids: workspace
+                .elements
+                .iter()
+                .filter(|element| identifiers.contains(&element.id))
+                .map(|element| element.id.clone())
+                .collect(),
+            relationships,
+        };
+    }
+
+    let expanded = expand_view(workspace, view);
+    let endpoint_view = static_base_view(workspace, view).unwrap_or(view);
+    let mut emitted = HashSet::new();
+    let mut relationships = Vec::new();
+    for (index, relationship) in workspace.relationships.iter().enumerate() {
+        if !expanded.relationships.contains(&index) {
+            continue;
+        }
+        let source = view_endpoint(workspace, endpoint_view, &relationship.source);
+        let destination = view_endpoint(workspace, endpoint_view, &relationship.destination);
+        if source == destination
+            || !expanded.elements.contains(&source)
+            || !expanded.elements.contains(&destination)
+        {
+            continue;
+        }
+        let description = relationship.description.clone().unwrap_or_default();
+        if emitted.insert((source.clone(), destination.clone(), description.clone())) {
+            relationships.push(ViewGraphRelationship {
+                source,
+                destination,
+                description,
+                relationship_index: Some(index),
+            });
+        }
+    }
+    ViewGraph {
+        element_ids: workspace
+            .elements
+            .iter()
+            .filter(|element| expanded.elements.contains(&element.id))
+            .map(|element| element.id.clone())
+            .collect(),
+        relationships,
+    }
+}
+
 fn expand_view(workspace: &Workspace, view: &View) -> ExpandedView {
     if view.kind == ViewKind::Filtered {
         return expand_filtered_view(workspace, view);

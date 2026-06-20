@@ -1,0 +1,228 @@
+{
+  "name": "Internet Banking",
+  "description": "Milestone 1 example",
+  "model": {
+    "people": [
+      {
+        "id": "customer",
+        "name": "Customer",
+        "description": "A bank customer",
+        "technology": null,
+        "parentId": null,
+        "tags": "",
+        "kind": "Person",
+        "properties": []
+      }
+    ],
+    "softwareSystems": [
+      {
+        "id": "bank",
+        "name": "Internet Banking System",
+        "description": "Allows customers to view accounts and make payments",
+        "technology": null,
+        "parentId": null,
+        "tags": "",
+        "kind": "SoftwareSystem",
+        "properties": [],
+        "containers": [
+          {
+            "id": "bank.web",
+            "name": "Web Application",
+            "description": "Customer-facing SPA",
+            "technology": "React",
+            "parentId": "bank",
+            "tags": "",
+            "kind": "Container",
+            "properties": [],
+            "components": []
+          },
+          {
+            "id": "bank.api",
+            "name": "API Application",
+            "description": "Backend API",
+            "technology": "Rust",
+            "parentId": "bank",
+            "tags": "",
+            "kind": "Container",
+            "properties": [],
+            "components": []
+          },
+          {
+            "id": "bank.db",
+            "name": "Database",
+            "description": "Stores audit/profile data",
+            "technology": "PostgreSQL",
+            "parentId": "bank",
+            "tags": "",
+            "kind": "Container",
+            "properties": [],
+            "components": []
+          }
+        ]
+      }
+    ],
+    "deploymentElements": [],
+    "relationships": [
+      {
+        "id": "1",
+        "sourceId": "customer",
+        "destinationId": "bank.web",
+        "description": "Uses",
+        "technology": null,
+        "tags": "",
+        "properties": []
+      },
+      {
+        "id": "2",
+        "sourceId": "bank.web",
+        "destinationId": "bank.api",
+        "description": "Calls",
+        "technology": "HTTPS/JSON",
+        "tags": "",
+        "properties": []
+      },
+      {
+        "id": "3",
+        "sourceId": "bank.api",
+        "destinationId": "bank.db",
+        "description": "Reads/writes",
+        "technology": "SQL",
+        "tags": "",
+        "properties": []
+      }
+    ]
+  },
+  "views": {
+    "systemLandscapeViews": [],
+    "systemContextViews": [
+      {
+        "key": "system-context",
+        "scope": "bank",
+        "description": "System Context diagram",
+        "title": "Internet Banking - System Context",
+        "elements": [
+          {
+            "id": "customer"
+          },
+          {
+            "id": "bank"
+          }
+        ],
+        "relationships": [
+          {
+            "id": "1"
+          }
+        ]
+      }
+    ],
+    "containerViews": [
+      {
+        "key": "container",
+        "scope": "bank",
+        "description": "Container diagram",
+        "title": "Internet Banking - Containers",
+        "elements": [
+          {
+            "id": "customer"
+          },
+          {
+            "id": "bank"
+          },
+          {
+            "id": "bank.web"
+          },
+          {
+            "id": "bank.api"
+          },
+          {
+            "id": "bank.db"
+          }
+        ],
+        "relationships": [
+          {
+            "id": "1"
+          },
+          {
+            "id": "2"
+          },
+          {
+            "id": "3"
+          }
+        ]
+      }
+    ],
+    "componentViews": [],
+    "filteredViews": [],
+    "dynamicViews": [],
+    "deploymentViews": [],
+    "customViews": [],
+    "imageViews": []
+  },
+  "c4c": {
+    "formatVersion": "8",
+    "identifiers": "hierarchical",
+    "elements": [
+      {
+        "id": "customer",
+        "name": "Customer",
+        "description": "A bank customer",
+        "technology": null,
+        "parentId": null,
+        "tags": "",
+        "kind": "Person",
+        "properties": []
+      },
+      {
+        "id": "bank",
+        "name": "Internet Banking System",
+        "description": "Allows customers to view accounts and make payments",
+        "technology": null,
+        "parentId": null,
+        "tags": "",
+        "kind": "SoftwareSystem",
+        "properties": []
+      },
+      {
+        "id": "bank.web",
+        "name": "Web Application",
+        "description": "Customer-facing SPA",
+        "technology": "React",
+        "parentId": "bank",
+        "tags": "",
+        "kind": "Container",
+        "properties": []
+      },
+      {
+        "id": "bank.api",
+        "name": "API Application",
+        "description": "Backend API",
+        "technology": "Rust",
+        "parentId": "bank",
+        "tags": "",
+        "kind": "Container",
+        "properties": []
+      },
+      {
+        "id": "bank.db",
+        "name": "Database",
+        "description": "Stores audit/profile data",
+        "technology": "PostgreSQL",
+        "parentId": "bank",
+        "tags": "",
+        "kind": "Container",
+        "properties": []
+      }
+    ],
+    "styles": {
+      "elements": [],
+      "relationships": [],
+      "themes": [],
+      "terminology": [],
+      "branding": null
+    },
+    "documentation": {
+      "sections": [],
+      "decisions": []
+    }
+  }
+}
