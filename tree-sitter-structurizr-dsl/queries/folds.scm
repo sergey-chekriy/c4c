@@ -13,4 +13,11 @@
   (deployment_view)
   (custom_view)
   (image_view)
+  (styles_block)
+  (element_style)
+  (relationship_style)
+  (light_styles)
+  (dark_styles)
+  (branding_block)
+  (terminology_block)
 ] @fold

@@ -66,6 +66,7 @@ impl Lexer<'_> {
                 '\\' if self.rest().starts_with("\\\n") => self.offset += 2,
                 '\\' if self.rest().starts_with("\\\r\n") => self.offset += 3,
                 '/' if self.rest().starts_with("//") => self.skip_comment(),
+                '#' if self.color() => {}
                 '#' => self.skip_comment(),
                 '-' if self.rest().starts_with("-/>") => {
                     self.offset += 3;
@@ -226,6 +227,32 @@ impl Lexer<'_> {
         while self.offset < self.source.text.len() && self.current() != '\n' {
             self.advance();
         }
+    }
+
+    fn color(&mut self) -> bool {
+        if !matches!(
+            self.tokens.last().map(|token| &token.kind),
+            Some(TokenKind::Identifier(name))
+                if ["background", "color", "colour", "stroke"]
+                    .iter()
+                    .any(|keyword| name.eq_ignore_ascii_case(keyword))
+        ) {
+            return false;
+        }
+        let start = self.offset;
+        let Some(value) = self.rest().get(1..7) else {
+            return false;
+        };
+        if value.len() != 6 || !value.chars().all(|character| character.is_ascii_hexdigit()) {
+            return false;
+        }
+        self.offset += 7;
+        self.push(
+            TokenKind::Identifier(self.source.text[start..self.offset].to_string()),
+            start,
+            self.offset,
+        );
+        true
     }
 
     fn current(&self) -> char {

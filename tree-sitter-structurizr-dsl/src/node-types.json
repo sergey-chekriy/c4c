@@ -72,6 +72,67 @@
     }
   },
   {
+    "type": "branding_block",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "branding_font",
+          "named": true
+        },
+        {
+          "type": "branding_logo",
+          "named": true
+        },
+        {
+          "type": "keyword",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "branding_font",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "value",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "branding_logo",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "value",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "component_view",
     "named": true,
     "fields": {
@@ -260,6 +321,37 @@
         },
         {
           "type": "view_title_statement",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "dark_styles",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "element_style",
+          "named": true
+        },
+        {
+          "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "relationship_style",
+          "named": true
+        },
+        {
+          "type": "theme_statement",
+          "named": true
+        },
+        {
+          "type": "themes_statement",
           "named": true
         }
       ]
@@ -580,6 +672,56 @@
         },
         {
           "type": "removed_relationship",
+          "named": true
+        },
+        {
+          "type": "value",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "element_style",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "element_style_property",
+          "named": true
+        },
+        {
+          "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "property_block",
+          "named": true
+        },
+        {
+          "type": "value",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "element_style_property",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "color",
+          "named": true
+        },
+        {
+          "type": "keyword",
           "named": true
         },
         {
@@ -990,6 +1132,37 @@
     }
   },
   {
+    "type": "light_styles",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "element_style",
+          "named": true
+        },
+        {
+          "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "relationship_style",
+          "named": true
+        },
+        {
+          "type": "theme_statement",
+          "named": true
+        },
+        {
+          "type": "themes_statement",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "model",
     "named": true,
     "fields": {},
@@ -1187,6 +1360,56 @@
     }
   },
   {
+    "type": "relationship_style",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "property_block",
+          "named": true
+        },
+        {
+          "type": "relationship_style_property",
+          "named": true
+        },
+        {
+          "type": "value",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "relationship_style_property",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "color",
+          "named": true
+        },
+        {
+          "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "value",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "removed_relationship",
     "named": true,
     "fields": {
@@ -1257,11 +1480,31 @@
       "required": true,
       "types": [
         {
-          "type": "generic_statement",
+          "type": "dark_styles",
+          "named": true
+        },
+        {
+          "type": "element_style",
           "named": true
         },
         {
           "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "light_styles",
+          "named": true
+        },
+        {
+          "type": "relationship_style",
+          "named": true
+        },
+        {
+          "type": "theme_statement",
+          "named": true
+        },
+        {
+          "type": "themes_statement",
           "named": true
         }
       ]
@@ -1389,11 +1632,30 @@
       "required": true,
       "types": [
         {
-          "type": "generic_statement",
+          "type": "keyword",
           "named": true
         },
         {
+          "type": "terminology_entry",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "terminology_entry",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
           "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "value",
           "named": true
         }
       ]
@@ -1502,6 +1764,10 @@
       "multiple": true,
       "required": true,
       "types": [
+        {
+          "type": "branding_block",
+          "named": true
+        },
         {
           "type": "component_view",
           "named": true
@@ -1666,6 +1932,10 @@
   {
     "type": "==",
     "named": false
+  },
+  {
+    "type": "color",
+    "named": true
   },
   {
     "type": "comment",

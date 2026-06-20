@@ -28,6 +28,11 @@ pub struct Workspace {
     pub removed_relationships: Vec<RemovedRelationship>,
     pub implied_relationships: Option<String>,
     pub enterprise: Option<NamedBlock>,
+    pub element_styles: Vec<ElementStyle>,
+    pub relationship_styles: Vec<RelationshipStyle>,
+    pub themes: Vec<ThemeReference>,
+    pub branding: Option<Branding>,
+    pub terminology: Vec<Property>,
     pub warnings: Vec<Diagnostic>,
     pub span: Span,
     pub source_map: SourceMap,
@@ -53,6 +58,11 @@ impl Workspace {
             removed_relationships: Vec::new(),
             implied_relationships: None,
             enterprise: None,
+            element_styles: Vec::new(),
+            relationship_styles: Vec::new(),
+            themes: Vec::new(),
+            branding: None,
+            terminology: Vec::new(),
             warnings: Vec::new(),
             span,
             source_map,
@@ -273,6 +283,52 @@ pub struct RemovedRelationship {
     pub order: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum StyleMode {
+    Default,
+    Light,
+    Dark,
+}
+
+#[derive(Debug, Clone)]
+pub struct ElementStyle {
+    pub tag: String,
+    pub mode: StyleMode,
+    pub values: Vec<Property>,
+    pub properties: Vec<Property>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct RelationshipStyle {
+    pub tag: String,
+    pub mode: StyleMode,
+    pub values: Vec<Property>,
+    pub properties: Vec<Property>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct ThemeReference {
+    pub source: String,
+    pub mode: StyleMode,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct Branding {
+    pub logo: Option<Property>,
+    pub fonts: Vec<BrandingFont>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone)]
+pub struct BrandingFont {
+    pub name: String,
+    pub location: Option<String>,
+    pub span: Span,
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CompileOptions {
     pub allow_network: bool,
@@ -412,6 +468,7 @@ fn merge_workspaces(mut base: Workspace, mut derived: Workspace, sources: Source
     base.extension = derived.extension;
     base.implied_relationships = derived.implied_relationships.or(base.implied_relationships);
     base.enterprise = derived.enterprise.or(base.enterprise);
+    base.branding = derived.branding.or(base.branding);
     base.span = derived.span;
     base.source_map = sources;
     base.elements.extend(derived.elements);
@@ -425,6 +482,10 @@ fn merge_workspaces(mut base: Workspace, mut derived: Workspace, sources: Source
     base.directives.extend(derived.directives);
     base.preserved.extend(derived.preserved);
     base.groups.extend(derived.groups);
+    base.element_styles.extend(derived.element_styles);
+    base.relationship_styles.extend(derived.relationship_styles);
+    base.themes.extend(derived.themes);
+    base.terminology.extend(derived.terminology);
     base.warnings.extend(derived.warnings);
     base
 }
@@ -570,10 +631,143 @@ pub fn validate(workspace: &Workspace) -> Result<(), String> {
             ViewKind::Image => validate_image_view(workspace, view, &mut diagnostics),
         }
     }
+    validate_styles(workspace, &mut diagnostics);
     if diagnostics.is_empty() {
         Ok(())
     } else {
         Err(render_all(&diagnostics, &workspace.source_map))
+    }
+}
+
+fn validate_styles(workspace: &Workspace, diagnostics: &mut Vec<Diagnostic>) {
+    const SHAPES: &[&str] = &[
+        "box",
+        "roundedbox",
+        "circle",
+        "ellipse",
+        "hexagon",
+        "diamond",
+        "cylinder",
+        "bucket",
+        "pipe",
+        "person",
+        "robot",
+        "folder",
+        "webbrowser",
+        "window",
+        "terminal",
+        "shell",
+        "mobiledeviceportrait",
+        "mobiledevicelandscape",
+        "component",
+    ];
+    for style in &workspace.element_styles {
+        debug_assert!(style.span.end >= style.span.start);
+        validate_property_spans(&style.properties);
+        for property in &style.values {
+            match property.key.as_str() {
+                "shape" => validate_enum(property, SHAPES, "shape", diagnostics),
+                "border" => validate_enum(
+                    property,
+                    &["solid", "dashed", "dotted"],
+                    "border",
+                    diagnostics,
+                ),
+                "metadata" | "description" => {
+                    validate_enum(property, &["true", "false"], "boolean", diagnostics)
+                }
+                "strokeWidth" => validate_integer(property, Some((1, 10)), diagnostics),
+                "opacity" => validate_integer(property, Some((0, 100)), diagnostics),
+                "width" | "height" | "fontSize" => validate_integer(property, None, diagnostics),
+                _ => {}
+            }
+        }
+    }
+    for style in &workspace.relationship_styles {
+        debug_assert!(style.span.end >= style.span.start);
+        validate_property_spans(&style.properties);
+        for property in &style.values {
+            match property.key.as_str() {
+                "style" => validate_enum(
+                    property,
+                    &["solid", "dashed", "dotted"],
+                    "relationship style",
+                    diagnostics,
+                ),
+                "routing" => validate_enum(
+                    property,
+                    &["direct", "orthogonal", "curved"],
+                    "routing",
+                    diagnostics,
+                ),
+                "jump" => validate_enum(property, &["true", "false"], "boolean", diagnostics),
+                "position" | "opacity" => validate_integer(property, Some((0, 100)), diagnostics),
+                "thickness" | "fontSize" | "width" => validate_integer(property, None, diagnostics),
+                _ => {}
+            }
+        }
+    }
+    validate_property_spans(&workspace.terminology);
+    if let Some(metadata) = workspace
+        .terminology
+        .iter()
+        .rev()
+        .find(|property| property.key == "metadata")
+    {
+        validate_enum(
+            metadata,
+            &["square", "round", "curly", "angle", "double-angle", "none"],
+            "metadata mode",
+            diagnostics,
+        );
+    }
+}
+
+fn validate_enum(
+    property: &Property,
+    allowed: &[&str],
+    label: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if !allowed
+        .iter()
+        .any(|value| property.value.eq_ignore_ascii_case(value))
+    {
+        diagnostics.push(
+            Diagnostic::error(
+                property.span,
+                format!("invalid {label} '{}'", property.value),
+            )
+            .with_help(format!("use one of: {}", allowed.join(", "))),
+        );
+    }
+}
+
+fn validate_integer(
+    property: &Property,
+    range: Option<(i32, i32)>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    match property.value.parse::<i32>() {
+        Ok(value)
+            if range.is_none_or(|(minimum, maximum)| (minimum..=maximum).contains(&value)) => {}
+        Ok(_) => {
+            let (minimum, maximum) = range.unwrap();
+            diagnostics.push(
+                Diagnostic::error(
+                    property.span,
+                    format!("{} must be between {minimum} and {maximum}", property.key),
+                )
+                .with_help("use an integer inside the documented range"),
+            );
+        }
+        Err(_) => diagnostics.push(
+            Diagnostic::error(
+                property.span,
+                format!("{} must be an integer", property.key),
+            )
+            .with_help("replace this value with an integer"),
+        ),
     }
 }
 
@@ -1198,6 +1392,37 @@ pub fn inspect(workspace: &Workspace) -> String {
             ));
         }
     }
+    if !workspace.element_styles.is_empty()
+        || !workspace.relationship_styles.is_empty()
+        || !workspace.themes.is_empty()
+        || workspace.branding.is_some()
+        || !workspace.terminology.is_empty()
+    {
+        output.push_str("m5:\n");
+        output.push_str(&format!(
+            "  elementStyles={} relationshipStyles={} themes={:?} terminology={:?}\n",
+            workspace.element_styles.len(),
+            workspace.relationship_styles.len(),
+            workspace
+                .themes
+                .iter()
+                .map(|theme| (&theme.source, theme.mode, theme.span.start))
+                .collect::<Vec<_>>(),
+            property_pairs(&workspace.terminology)
+        ));
+        if let Some(branding) = &workspace.branding {
+            debug_assert!(branding.span.end >= branding.span.start);
+            output.push_str(&format!(
+                "  branding logo={:?} fonts={:?}\n",
+                branding.logo.as_ref().map(|logo| &logo.value),
+                branding
+                    .fonts
+                    .iter()
+                    .map(|font| (&font.name, &font.location, font.span.start))
+                    .collect::<Vec<_>>()
+            ));
+        }
+    }
     if workspace.extension.is_some()
         || !workspace.properties.is_empty()
         || !workspace.directives.is_empty()
@@ -1335,14 +1560,33 @@ fn mermaid(workspace: &Workspace, view: &View) -> String {
     }
     let expanded = expand_view(workspace, view);
     let mut output = String::from("flowchart LR\n");
+    let mut class_definitions = Vec::new();
     for element in &workspace.elements {
         if !expanded.elements.contains(&element.id) {
             continue;
         }
-        let label = format!("{}\\n{}", escape(&element.name), kind_label(&element.kind));
-        output.push_str(&format!("  {}[\"{}\"]\n", node_id(&element.id), label));
+        let label = format!(
+            "{}\\n{}",
+            escape(&element.name),
+            terminology_label(workspace, &element.kind)
+        );
+        let style = effective_element_style(workspace, element);
+        let class_name = format!("style_{}", node_id(&element.id));
+        let css = element_mermaid_css(&style);
+        let class = (!css.is_empty()).then(|| format!(":::{class_name}"));
+        output.push_str(&format!(
+            "  {}{}{}\n",
+            node_id(&element.id),
+            mermaid_shape(&label, style.get("shape").map(String::as_str)),
+            class.as_deref().unwrap_or("")
+        ));
+        if !css.is_empty() {
+            class_definitions.push(format!("  classDef {class_name} {}\n", css.join(",")));
+        }
     }
     let mut emitted = HashSet::new();
+    let mut link_styles = Vec::new();
+    let mut link_index = 0usize;
     let endpoint_view = static_base_view(workspace, view).unwrap_or(view);
     for (index, relationship) in workspace.relationships.iter().enumerate() {
         if !expanded.relationships.contains(&index) {
@@ -1369,9 +1613,114 @@ fn mermaid(workspace: &Workspace, view: &View) -> String {
                 escape(relationship.description.as_deref().unwrap_or("")),
                 node_id(&destination)
             ));
+            let css =
+                relationship_mermaid_css(&effective_relationship_style(workspace, relationship));
+            if !css.is_empty() {
+                link_styles.push(format!("  linkStyle {link_index} {}\n", css.join(",")));
+            }
+            link_index += 1;
         }
     }
+    for definition in class_definitions {
+        output.push_str(&definition);
+    }
+    for style in link_styles {
+        output.push_str(&style);
+    }
     output
+}
+
+fn effective_element_style(workspace: &Workspace, element: &Element) -> HashMap<String, String> {
+    let implicit = element_style_tag(&element.kind);
+    let mut effective = HashMap::new();
+    for style in workspace
+        .element_styles
+        .iter()
+        .filter(|style| style.mode == StyleMode::Default)
+    {
+        if style.tag == implicit || element.tags.iter().any(|tag| tag == &style.tag) {
+            for property in &style.values {
+                effective.insert(property.key.clone(), property.value.clone());
+            }
+        }
+    }
+    effective
+}
+
+fn effective_relationship_style(
+    workspace: &Workspace,
+    relationship: &Relationship,
+) -> HashMap<String, String> {
+    let mut effective = HashMap::new();
+    for style in workspace
+        .relationship_styles
+        .iter()
+        .filter(|style| style.mode == StyleMode::Default)
+    {
+        if style.tag == "Relationship" || relationship.tags.iter().any(|tag| tag == &style.tag) {
+            for property in &style.values {
+                effective.insert(property.key.clone(), property.value.clone());
+            }
+        }
+    }
+    effective
+}
+
+fn element_mermaid_css(style: &HashMap<String, String>) -> Vec<String> {
+    let mut css = Vec::new();
+    for (property, mermaid) in [
+        ("background", "fill"),
+        ("color", "color"),
+        ("stroke", "stroke"),
+    ] {
+        if let Some(value) = style.get(property) {
+            css.push(format!("{mermaid}:{value}"));
+        }
+    }
+    if let Some(value) = style.get("strokeWidth") {
+        css.push(format!("stroke-width:{value}px"));
+    }
+    match style.get("border").map(String::as_str) {
+        Some(value) if value.eq_ignore_ascii_case("dashed") => {
+            css.push("stroke-dasharray:5 5".into())
+        }
+        Some(value) if value.eq_ignore_ascii_case("dotted") => {
+            css.push("stroke-dasharray:2 3".into())
+        }
+        _ => {}
+    }
+    css
+}
+
+fn relationship_mermaid_css(style: &HashMap<String, String>) -> Vec<String> {
+    let mut css = Vec::new();
+    if let Some(value) = style.get("color") {
+        css.push(format!("stroke:{value}"));
+    }
+    if let Some(value) = style.get("thickness") {
+        css.push(format!("stroke-width:{value}px"));
+    }
+    match style.get("style").map(String::as_str) {
+        Some(value) if value.eq_ignore_ascii_case("dashed") => {
+            css.push("stroke-dasharray:5 5".into())
+        }
+        Some(value) if value.eq_ignore_ascii_case("dotted") => {
+            css.push("stroke-dasharray:2 3".into())
+        }
+        _ => {}
+    }
+    css
+}
+
+fn mermaid_shape(label: &str, shape: Option<&str>) -> String {
+    match shape.map(str::to_ascii_lowercase).as_deref() {
+        Some("roundedbox") => format!("(\"{label}\")"),
+        Some("circle") => format!("((\"{label}\"))"),
+        Some("hexagon") => format!("{{{{\"{label}\"}}}}"),
+        Some("diamond") => format!("{{\"{label}\"}}"),
+        Some("cylinder") => format!("[(\"{label}\")]"),
+        _ => format!("[\"{label}\"]"),
+    }
 }
 
 #[derive(Default)]
@@ -1879,7 +2228,44 @@ fn escape(value: &str) -> String {
     value.replace('"', "'").replace('|', "/")
 }
 
-fn kind_label(kind: &ElementKind) -> &'static str {
+fn terminology_label<'a>(workspace: &'a Workspace, kind: &ElementKind) -> &'a str {
+    let key = match kind {
+        ElementKind::Person => Some("person"),
+        ElementKind::SoftwareSystem => Some("softwareSystem"),
+        ElementKind::Container => Some("container"),
+        ElementKind::Component => Some("component"),
+        ElementKind::DeploymentNode => Some("deploymentNode"),
+        ElementKind::InfrastructureNode => Some("infrastructureNode"),
+        _ => None,
+    };
+    key.and_then(|key| {
+        workspace
+            .terminology
+            .iter()
+            .rev()
+            .find(|property| property.key == key)
+            .map(|property| property.value.as_str())
+    })
+    .unwrap_or_else(|| default_kind_label(kind))
+}
+
+fn element_style_tag(kind: &ElementKind) -> &'static str {
+    match kind {
+        ElementKind::Person => "Person",
+        ElementKind::SoftwareSystem => "Software System",
+        ElementKind::Container => "Container",
+        ElementKind::Component => "Component",
+        ElementKind::Generic => "Element",
+        ElementKind::DeploymentEnvironment => "Deployment Environment",
+        ElementKind::DeploymentGroup => "Deployment Group",
+        ElementKind::DeploymentNode => "Deployment Node",
+        ElementKind::InfrastructureNode => "Infrastructure Node",
+        ElementKind::SoftwareSystemInstance => "Software System Instance",
+        ElementKind::ContainerInstance => "Container Instance",
+    }
+}
+
+fn default_kind_label(kind: &ElementKind) -> &'static str {
     match kind {
         ElementKind::Person => "Person",
         ElementKind::SoftwareSystem => "Software System",
@@ -2234,7 +2620,7 @@ mod tests {
         assert!(workspace
             .warnings
             .iter()
-            .any(|warning| warning.message.contains("M5")));
+            .any(|warning| warning.message.contains("Mermaid")));
         assert!(workspace
             .warnings
             .iter()
@@ -2290,6 +2676,85 @@ mod tests {
             "dynamic relationship identifier 'unknownRelationship' cannot be resolved",
             "deployment view scope 'user' has wrong kind",
             "deployment view environment is missing or undefined",
+        ] {
+            assert!(
+                error.contains(message),
+                "missing diagnostic: {message}\n{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn parses_validates_and_exports_m5_styles() {
+        let workspace = compile_file("tests/fixtures/m5-styles.dsl").unwrap();
+        validate(&workspace).unwrap();
+        assert_eq!(workspace.element_styles.len(), 4);
+        assert_eq!(workspace.relationship_styles.len(), 1);
+        assert_eq!(workspace.themes.len(), 4);
+        assert_eq!(workspace.terminology.len(), 8);
+        assert!(workspace
+            .element_styles
+            .iter()
+            .any(|style| style.mode == StyleMode::Light));
+        assert!(workspace
+            .element_styles
+            .iter()
+            .any(|style| style.mode == StyleMode::Dark));
+        let primary = workspace
+            .element_styles
+            .iter()
+            .find(|style| style.tag == "Primary")
+            .unwrap();
+        assert!(primary
+            .values
+            .iter()
+            .any(|property| { property.key == "color" && property.value == "#fedcba" }));
+        let branding = workspace.branding.as_ref().unwrap();
+        assert_eq!(branding.logo.as_ref().unwrap().value, "assets/logo.svg");
+        assert_eq!(branding.fonts[0].name, "Inter");
+        assert!(workspace
+            .warnings
+            .iter()
+            .any(|warning| warning.message.contains("not rendered by Mermaid")));
+        assert_eq!(
+            mermaid(&workspace, &workspace.views[0]),
+            "flowchart LR\n  user(\"User\\nActor\"):::style_user\n  system[\"System\\nApplication\"]\n  user -->|Uses| system\n  classDef style_user fill:#223344,color:#fedcba,stroke:#445566,stroke-width:3px,stroke-dasharray:5 5\n  linkStyle 0 stroke:#00aa00,stroke-width:4px,stroke-dasharray:2 3\n"
+        );
+    }
+
+    #[test]
+    fn preserves_remote_m5_metadata_without_fetching() {
+        let workspace = compile_file("tests/fixtures/m5-remote.dsl").unwrap();
+        validate(&workspace).unwrap();
+        assert_eq!(workspace.themes.len(), 3);
+        assert_eq!(workspace.element_styles[0].values[0].key, "icon");
+        let warnings = warnings(&workspace).unwrap();
+        for message in [
+            "remote icon URL was preserved but was not fetched",
+            "remote theme URL was preserved but was not fetched",
+            "remote branding logo was preserved but was not fetched",
+            "remote branding font was preserved but was not fetched",
+        ] {
+            assert!(warnings.contains(message));
+        }
+    }
+
+    #[test]
+    fn reports_invalid_m5_style_values() {
+        let workspace = compile_file("tests/fixtures/m5-invalid.dsl").unwrap();
+        let error = validate(&workspace).unwrap_err();
+        for message in [
+            "invalid shape 'Blob'",
+            "width must be an integer",
+            "strokeWidth must be between 1 and 10",
+            "invalid border 'double'",
+            "opacity must be between 0 and 100",
+            "invalid boolean 'perhaps'",
+            "thickness must be an integer",
+            "invalid relationship style 'broken'",
+            "invalid routing 'ZigZag'",
+            "position must be between 0 and 100",
+            "invalid metadata mode 'triangle'",
         ] {
             assert!(
                 error.contains(message),

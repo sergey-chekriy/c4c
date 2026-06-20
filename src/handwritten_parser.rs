@@ -1,9 +1,10 @@
 use crate::{
     compiler::{
-        AnimationStep, AutoLayout, Directive, DynamicRelationship, Element, ElementKind,
-        FilterMode, Group, HealthCheck, ImageSource, NamedBlock, PreservedBlock, Property,
-        Reference, Relationship, RemovedRelationship, View, ViewFilter, ViewKind, ViewSelector,
-        Workspace, WorkspaceExtension,
+        AnimationStep, AutoLayout, Branding, BrandingFont, Directive, DynamicRelationship, Element,
+        ElementKind, ElementStyle, FilterMode, Group, HealthCheck, ImageSource, NamedBlock,
+        PreservedBlock, Property, Reference, Relationship, RelationshipStyle, RemovedRelationship,
+        StyleMode, ThemeReference, View, ViewFilter, ViewKind, ViewSelector, Workspace,
+        WorkspaceExtension,
     },
     diagnostic::{render_all, Diagnostic},
     lexer::{Token, TokenKind},
@@ -905,20 +906,416 @@ impl Parser {
         } else if self.at_keyword("properties") {
             let properties = self.parse_property_block("properties");
             self.workspace.view_properties.extend(properties);
-        } else if ["styles", "theme", "themes", "terminology"]
-            .iter()
-            .any(|name| self.at_keyword(name))
-        {
-            let name = match &self.current().kind {
-                TokenKind::Identifier(name) => name.clone(),
-                _ => unreachable!(),
-            };
-            let preserved = self.parse_preserved(&name);
-            self.warn_preserved(&preserved, "view styling semantics are deferred to M5");
-            self.workspace.preserved.push(preserved);
+        } else if self.at_keyword("styles") {
+            self.parse_styles();
+        } else if self.at_keyword("theme") || self.at_keyword("themes") {
+            self.parse_themes(StyleMode::Default);
+        } else if self.at_keyword("branding") {
+            self.parse_branding();
+        } else if self.at_keyword("terminology") {
+            self.parse_terminology();
         } else {
             self.unknown_statement("views");
         }
+    }
+
+    fn parse_styles(&mut self) {
+        self.advance();
+        if !self.open_block("styles") {
+            return;
+        }
+        self.parse_style_block("styles", StyleMode::Default);
+    }
+
+    fn parse_style_block(&mut self, label: &str, mode: StyleMode) {
+        loop {
+            self.skip_newlines();
+            if self.at(TokenTag::RightBrace) {
+                self.close_block(label);
+                return;
+            }
+            if self.at(TokenTag::Eof) {
+                self.missing_closing_brace(label);
+                return;
+            }
+            if self.at_keyword("element") {
+                self.parse_element_style(mode);
+            } else if self.at_keyword("relationship") {
+                self.parse_relationship_style(mode);
+            } else if self.at_keyword("light") || self.at_keyword("dark") {
+                let variant = if self.at_keyword("light") {
+                    StyleMode::Light
+                } else {
+                    StyleMode::Dark
+                };
+                let start = self.advance();
+                if self.open_block("style variant") {
+                    self.workspace.warnings.push(
+                        Diagnostic::warning(
+                            start.span,
+                            "light/dark style variants are preserved but Mermaid uses default styles",
+                        )
+                        .with_help("a future exporter can select the requested style variant"),
+                    );
+                    self.parse_style_block("style variant", variant);
+                }
+            } else if self.at_keyword("theme") || self.at_keyword("themes") {
+                self.parse_themes(mode);
+            } else {
+                self.unknown_statement(label);
+            }
+        }
+    }
+
+    fn parse_element_style(&mut self, mode: StyleMode) {
+        let start = self.advance();
+        let Some((tag, _)) = self.take_value() else {
+            self.error(start.span, "element style tag is missing", None);
+            self.skip_statement();
+            return;
+        };
+        if !self.open_block("element style") {
+            return;
+        }
+        let mut style = ElementStyle {
+            tag,
+            mode,
+            values: Vec::new(),
+            properties: Vec::new(),
+            span: start.span,
+        };
+        loop {
+            self.skip_newlines();
+            if self.at(TokenTag::RightBrace) {
+                if let Some(end) = self.close_block("element style") {
+                    style.span = start.span.merge(end.span);
+                }
+                break;
+            }
+            if self.at(TokenTag::Eof) {
+                self.missing_closing_brace("element style");
+                break;
+            }
+            if self.at_keyword("properties") {
+                style
+                    .properties
+                    .extend(self.parse_property_block("properties"));
+                self.warn_style(
+                    start.span,
+                    "element style properties are not rendered by Mermaid",
+                );
+            } else if let Some(name) = self.element_style_property() {
+                if let Some(property) = self.parse_style_property(name) {
+                    self.warn_element_style_property(&property);
+                    style.values.push(property);
+                }
+            } else {
+                self.unknown_statement("element style");
+            }
+        }
+        self.workspace.element_styles.push(style);
+    }
+
+    fn parse_relationship_style(&mut self, mode: StyleMode) {
+        let start = self.advance();
+        let Some((tag, _)) = self.take_value() else {
+            self.error(start.span, "relationship style tag is missing", None);
+            self.skip_statement();
+            return;
+        };
+        if !self.open_block("relationship style") {
+            return;
+        }
+        let mut style = RelationshipStyle {
+            tag,
+            mode,
+            values: Vec::new(),
+            properties: Vec::new(),
+            span: start.span,
+        };
+        loop {
+            self.skip_newlines();
+            if self.at(TokenTag::RightBrace) {
+                if let Some(end) = self.close_block("relationship style") {
+                    style.span = start.span.merge(end.span);
+                }
+                break;
+            }
+            if self.at(TokenTag::Eof) {
+                self.missing_closing_brace("relationship style");
+                break;
+            }
+            if self.at_keyword("properties") {
+                style
+                    .properties
+                    .extend(self.parse_property_block("properties"));
+                self.warn_style(
+                    start.span,
+                    "relationship style properties are not rendered by Mermaid",
+                );
+            } else if let Some(name) = self.relationship_style_property() {
+                if let Some(property) = self.parse_style_property(name) {
+                    self.warn_relationship_style_property(&property);
+                    style.values.push(property);
+                }
+            } else {
+                self.unknown_statement("relationship style");
+            }
+        }
+        self.workspace.relationship_styles.push(style);
+    }
+
+    fn element_style_property(&self) -> Option<&'static str> {
+        [
+            "shape",
+            "icon",
+            "width",
+            "height",
+            "background",
+            "color",
+            "colour",
+            "stroke",
+            "strokeWidth",
+            "fontSize",
+            "border",
+            "opacity",
+            "metadata",
+            "description",
+        ]
+        .into_iter()
+        .find(|name| self.at_keyword(name))
+    }
+
+    fn relationship_style_property(&self) -> Option<&'static str> {
+        [
+            "thickness",
+            "color",
+            "colour",
+            "style",
+            "routing",
+            "jump",
+            "fontSize",
+            "width",
+            "position",
+            "opacity",
+        ]
+        .into_iter()
+        .find(|name| self.at_keyword(name))
+    }
+
+    fn parse_style_property(&mut self, name: &str) -> Option<Property> {
+        let start = self.advance();
+        let value = self.take_value();
+        if value.is_none() {
+            self.error(start.span, format!("{name} value is missing"), None);
+        }
+        self.finish_statement(name);
+        value.and_then(|(value, span)| {
+            (!value.is_empty()).then(|| Property {
+                key: if name.eq_ignore_ascii_case("colour") {
+                    "color".into()
+                } else {
+                    name.into()
+                },
+                value,
+                span: start.span.merge(span),
+            })
+        })
+    }
+
+    fn warn_element_style_property(&mut self, property: &Property) {
+        let unsupported = match property.key.as_str() {
+            "icon" | "width" | "height" | "fontSize" | "opacity" | "metadata" | "description" => {
+                true
+            }
+            "shape" => ![
+                "box",
+                "roundedbox",
+                "circle",
+                "hexagon",
+                "diamond",
+                "cylinder",
+            ]
+            .iter()
+            .any(|shape| property.value.eq_ignore_ascii_case(shape)),
+            _ => false,
+        };
+        if unsupported {
+            self.warn_style(
+                property.span,
+                &format!(
+                    "element style property '{}' is preserved but not rendered by Mermaid",
+                    property.key
+                ),
+            );
+        }
+        if property.key == "icon" && is_remote_url(&property.value) {
+            self.warn_style(
+                property.span,
+                "remote icon URL was preserved but was not fetched",
+            );
+        }
+    }
+
+    fn warn_relationship_style_property(&mut self, property: &Property) {
+        if matches!(
+            property.key.as_str(),
+            "routing" | "jump" | "fontSize" | "width" | "position" | "opacity"
+        ) {
+            self.warn_style(
+                property.span,
+                &format!(
+                    "relationship style property '{}' is preserved but not rendered by Mermaid",
+                    property.key
+                ),
+            );
+        }
+    }
+
+    fn parse_themes(&mut self, mode: StyleMode) {
+        let start = self.advance();
+        let plural = matches!(&start.kind, TokenKind::Identifier(name) if name.eq_ignore_ascii_case("themes"));
+        let values = self.take_values();
+        if values.is_empty() {
+            self.error(start.span, "theme reference is missing", None);
+        }
+        if !plural {
+            self.limit_arguments(&values, 1, "theme accepts one reference");
+        }
+        for (source, span) in values {
+            let message = if is_remote_url(&source) {
+                "remote theme URL was preserved but was not fetched"
+            } else {
+                "theme reference was preserved but was not loaded"
+            };
+            self.warn_style(span, message);
+            self.workspace
+                .themes
+                .push(ThemeReference { source, mode, span });
+        }
+        self.finish_statement("theme");
+    }
+
+    fn parse_branding(&mut self) {
+        let start = self.advance();
+        if !self.open_block("branding") {
+            return;
+        }
+        let mut branding = Branding {
+            logo: None,
+            fonts: Vec::new(),
+            span: start.span,
+        };
+        loop {
+            self.skip_newlines();
+            if self.at(TokenTag::RightBrace) {
+                if let Some(end) = self.close_block("branding") {
+                    branding.span = start.span.merge(end.span);
+                }
+                break;
+            }
+            if self.at(TokenTag::Eof) {
+                self.missing_closing_brace("branding");
+                break;
+            }
+            if self.eat_keyword("logo").is_some() {
+                if let Some((value, span)) = self.take_value() {
+                    if is_remote_url(&value) {
+                        self.warn_style(
+                            span,
+                            "remote branding logo was preserved but was not fetched",
+                        );
+                    }
+                    branding.logo = Some(Property {
+                        key: "logo".into(),
+                        value,
+                        span,
+                    });
+                } else {
+                    self.error(self.current().span, "branding logo is missing", None);
+                }
+                self.finish_statement("branding logo");
+            } else if self.eat_keyword("font").is_some() {
+                let values = self.take_values();
+                self.limit_arguments(&values, 2, "branding font accepts a name and optional URL");
+                if let Some((name, span)) = values.first() {
+                    let location = optional_argument(values.get(1));
+                    if location.as_deref().is_some_and(is_remote_url) {
+                        self.warn_style(
+                            values[1].1,
+                            "remote branding font was preserved but was not fetched",
+                        );
+                    }
+                    branding.fonts.push(BrandingFont {
+                        name: name.clone(),
+                        location,
+                        span: *span,
+                    });
+                } else {
+                    self.error(self.current().span, "branding font name is missing", None);
+                }
+                self.finish_statement("branding font");
+            } else {
+                self.unknown_statement("branding");
+            }
+        }
+        self.warn_style(
+            branding.span,
+            "branding metadata is preserved but not rendered by Mermaid",
+        );
+        self.workspace.branding = Some(branding);
+    }
+
+    fn parse_terminology(&mut self) {
+        self.advance();
+        if !self.open_block("terminology") {
+            return;
+        }
+        loop {
+            self.skip_newlines();
+            if self.at(TokenTag::RightBrace) {
+                self.close_block("terminology");
+                break;
+            }
+            if self.at(TokenTag::Eof) {
+                self.missing_closing_brace("terminology");
+                break;
+            }
+            let Some(name) = [
+                "person",
+                "softwareSystem",
+                "container",
+                "component",
+                "deploymentNode",
+                "infrastructureNode",
+                "relationship",
+                "metadata",
+            ]
+            .into_iter()
+            .find(|name| self.at_keyword(name)) else {
+                self.unknown_statement("terminology");
+                continue;
+            };
+            if let Some(property) = self.parse_style_property(name) {
+                if matches!(name, "relationship" | "metadata") {
+                    self.warn_style(
+                        property.span,
+                        &format!(
+                            "terminology '{}' is preserved but not rendered by Mermaid",
+                            name
+                        ),
+                    );
+                }
+                self.workspace.terminology.push(property);
+            }
+        }
+    }
+
+    fn warn_style(&mut self, span: Span, message: &str) {
+        self.workspace.warnings.push(
+            Diagnostic::warning(span, message)
+                .with_help("the value remains available to future local exporters"),
+        );
     }
 
     fn parse_view(&mut self, kind: ViewKind) {

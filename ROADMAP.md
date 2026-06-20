@@ -30,6 +30,8 @@ Status: implemented behind the default parser facade, with the handwritten parse
 
 Implement styles, themes, branding, terminology, light/dark styling, element styles, and relationship styles.
 
+Status: implemented with validated semantic metadata, safe offline references, terminology labels, and deterministic partial Mermaid styling.
+
 ## M6 — preprocessing and advanced DSL features
 
 Implement includes, constants, substitution, expressions, scripts/plugins as safe parsed constructs, and explicit network opt-in for URL usage.

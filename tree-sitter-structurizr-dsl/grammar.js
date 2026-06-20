@@ -196,6 +196,7 @@ module.exports = grammar({
       $.styles_block,
       $.theme_statement,
       $.themes_statement,
+      $.branding_block,
       $.terminology_block,
     ),
 
@@ -347,8 +348,118 @@ module.exports = grammar({
       seq(kw($, 'kroki'), $.value, $.value, $._newline),
     ),
 
-    styles_block: $ => seq(kw($, 'styles'), $._generic_block),
-    terminology_block: $ => seq(kw($, 'terminology'), $._generic_block),
+    styles_block: $ => seq(kw($, 'styles'), $._styles_block),
+
+    _styles_block: $ => seq(
+      '{', $._newline,
+      repeat(choice($._newline, $._style_statement)),
+      '}', $._newline,
+    ),
+
+    _style_statement: $ => choice(
+      $.element_style,
+      $.relationship_style,
+      $.light_styles,
+      $.dark_styles,
+      $.theme_statement,
+      $.themes_statement,
+    ),
+
+    element_style: $ => seq(kw($, 'element'), $.value, $._element_style_block),
+    relationship_style: $ => seq(kw($, 'relationship'), $.value, $._relationship_style_block),
+    light_styles: $ => seq(kw($, 'light'), $._style_variant_block),
+    dark_styles: $ => seq(kw($, 'dark'), $._style_variant_block),
+
+    _style_variant_block: $ => seq(
+      '{', $._newline,
+      repeat(choice(
+        $._newline,
+        $.element_style,
+        $.relationship_style,
+        $.theme_statement,
+        $.themes_statement,
+      )),
+      '}', $._newline,
+    ),
+
+    _element_style_block: $ => seq(
+      '{', $._newline,
+      repeat(choice($._newline, $.element_style_property, $.property_block)),
+      '}', $._newline,
+    ),
+
+    element_style_property: $ => seq(
+      choice(
+        kw($, 'shape'),
+        kw($, 'icon'),
+        kw($, 'width'),
+        kw($, 'height'),
+        kw($, 'background'),
+        kw($, 'color'),
+        kw($, 'colour'),
+        kw($, 'stroke'),
+        kw($, 'strokeWidth'),
+        kw($, 'fontSize'),
+        kw($, 'border'),
+        kw($, 'opacity'),
+        kw($, 'metadata'),
+        kw($, 'description'),
+      ),
+      $._style_value,
+      $._newline,
+    ),
+
+    _relationship_style_block: $ => seq(
+      '{', $._newline,
+      repeat(choice($._newline, $.relationship_style_property, $.property_block)),
+      '}', $._newline,
+    ),
+
+    relationship_style_property: $ => seq(
+      choice(
+        kw($, 'thickness'),
+        kw($, 'color'),
+        kw($, 'colour'),
+        kw($, 'style'),
+        kw($, 'routing'),
+        kw($, 'jump'),
+        kw($, 'fontSize'),
+        kw($, 'width'),
+        kw($, 'position'),
+        kw($, 'opacity'),
+      ),
+      $._style_value,
+      $._newline,
+    ),
+
+    branding_block: $ => seq(
+      kw($, 'branding'), '{', $._newline,
+      repeat(choice($._newline, $.branding_logo, $.branding_font)),
+      '}', $._newline,
+    ),
+    branding_logo: $ => seq(kw($, 'logo'), $.value, $._newline),
+    branding_font: $ => seq(kw($, 'font'), $.value, optional($.value), $._newline),
+
+    terminology_block: $ => seq(
+      kw($, 'terminology'), '{', $._newline,
+      repeat(choice($._newline, $.terminology_entry)),
+      '}', $._newline,
+    ),
+    terminology_entry: $ => seq(
+      choice(
+        kw($, 'person'),
+        kw($, 'softwareSystem'),
+        kw($, 'container'),
+        kw($, 'component'),
+        kw($, 'deploymentNode'),
+        kw($, 'infrastructureNode'),
+        kw($, 'relationship'),
+        kw($, 'metadata'),
+      ),
+      $.value,
+      $._newline,
+    ),
+
     theme_statement: $ => seq(kw($, 'theme'), $.value, $._newline),
     themes_statement: $ => seq(kw($, 'themes'), repeat1($.value), $._newline),
 
@@ -362,7 +473,9 @@ module.exports = grammar({
       choice($._newline, $._generic_block),
     ),
 
+    _style_value: $ => choice($.value, $.color),
     value: $ => choice($.identifier, $.string),
+    color: _ => token(prec(3, /#[0-9a-fA-F]{6}/)),
     order: _ => token(prec(3, /[0-9]+:/)),
     identifier: _ => token(prec(-1, /[A-Za-z0-9_.,:\/-]+/)),
     string: _ => /"([^"\\]|\\.)*"/,

@@ -23,7 +23,8 @@ Implemented in this repo:
 - Deterministic static/filtered/deployment expansion and Mermaid graph export; dynamic views export as Mermaid sequences.
 - Multi-value include/exclude selectors, `*`, `*?`, simple relationship patterns, layout, defaults, animation, titles, descriptions, and properties.
 - Semantic validation for duplicate identifiers and view keys, references, parent hierarchy, filters, deployment environments, dynamic scopes, and view scope types.
-- Style/theme/terminology and custom/image rendering metadata are preserved with explicit deferred-feature warnings.
+- Element/relationship styles, light/dark variants, theme references, branding, and terminology with validation and safe offline preservation.
+- Deterministic Mermaid class/link styling for supported colors, strokes, borders, thickness, line styles, and basic shapes.
 
 
 Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
@@ -50,7 +51,14 @@ Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
 - Minimal highlighting, folding, and locals queries for future editor support.
 - Fixture-wide CST and semantic parity tests.
 
-M5+ style semantics, preprocessing, documentation rendering, and additional exporters remain deferred.
+## Milestone 5 additions
+
+- Tree-sitter and semantic support for styles, light/dark variants, themes, branding, and terminology.
+- Validation for documented shapes, enums, booleans, integers, and numeric ranges.
+- Mermaid element classes, basic shape approximation, relationship line styling, and terminology labels.
+- Remote/local asset references remain metadata-only and are never fetched.
+
+M6+ preprocessing, documentation rendering, and additional exporters remain deferred.
 
 ## Build
 
@@ -123,7 +131,7 @@ workspace.dsl
   -> exporters
 ```
 
-The compiler now has a Tree-sitter syntax frontend, span-aware compatibility adapter, source diagnostics, semantic validation, core model grammar, and M4 view expansion. Style semantics, preprocessing, documentation rendering, and additional exporters are planned in later milestones.
+The compiler now has a Tree-sitter syntax frontend, span-aware compatibility adapter, source diagnostics, semantic validation, core model grammar, M4 view expansion, and M5 styling. Preprocessing, documentation rendering, and additional exporters are planned in later milestones.
 
 ## Offline/security policy
 
