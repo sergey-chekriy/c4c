@@ -1,10 +1,20 @@
+use std::path::Path;
+
 fn main() {
     let grammar = "tree-sitter-structurizr-dsl/src";
-    println!("cargo:rerun-if-changed={grammar}/parser.c");
-    println!("cargo:rerun-if-changed={grammar}/tree_sitter/parser.h");
+    let parser = format!("{grammar}/parser.c");
+    let header = format!("{grammar}/tree_sitter/parser.h");
+    for artifact in [&parser, &header] {
+        if !Path::new(artifact).is_file() {
+            panic!(
+                "Tree-sitter generated parser artifact is missing: {artifact}\nRun: make grammar"
+            );
+        }
+        println!("cargo:rerun-if-changed={artifact}");
+    }
     cc::Build::new()
         .include(grammar)
-        .file(format!("{grammar}/parser.c"))
+        .file(parser)
         .warnings(false)
         .compile("tree-sitter-structurizr-dsl");
 }

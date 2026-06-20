@@ -2,19 +2,15 @@ cargo fmt
 cargo clippy -- -D warnings
 cargo test
 
-rm -rf out
-cargo run -- validate examples/internet-banking.dsl
-cargo run -- inspect examples/internet-banking.dsl
-cargo run -- export examples/internet-banking.dsl --format mermaid --out out
-cat out/system-context.mmd
-cat out/container.mmd
+cargo run -- validate tests/fixtures/m6-preprocessing.dsl
+cargo run -- validate tests/fixtures/m6-nested.dsl
 
-
-for f in tests/fixtures/m5-*.dsl; do
-  echo "=== $f ==="
-  cargo run -- validate "$f" || true
+for f in \
+  tests/fixtures/m6-cycle-a.dsl \
+  tests/fixtures/m6-missing.dsl \
+  tests/fixtures/m6-remote.dsl \
+  tests/fixtures/m6-unsafe.dsl
+do
+  echo "=== SHOULD FAIL SAFELY: $f ==="
+  cargo run -- validate "$f" && exit 1 || echo "OK: failed safely"
 done
-
-rm -rf out-m5
-cargo run -- export tests/fixtures/m5-styles.dsl --format mermaid --out out-m5
-find out-m5 -type f -maxdepth 1 -print -exec sed -n '1,160p' {} \;

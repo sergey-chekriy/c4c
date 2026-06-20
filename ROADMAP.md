@@ -38,6 +38,12 @@ Implement includes, constants, substitution, expressions, scripts/plugins as saf
 
 Status: implemented with source-mapped local includes, deterministic directories, constants, a safe selector-expression subset, and strict rejection without network or code execution.
 
+## M6.5 — Tree-sitter packaging cleanup
+
+Keep Node.js grammar-development-only while Rust builds compile committed generated artifacts.
+
+Status: implemented with documented Make targets, committed generated artifacts, and GitHub Linguist metadata.
+
 ## M7 — documentation and ADRs
 
 Import Markdown/AsciiDoc documentation and ADRs; generate static documentation site.

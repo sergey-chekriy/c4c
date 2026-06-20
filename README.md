@@ -77,6 +77,33 @@ M7+ documentation rendering and additional exporters remain deferred.
 cargo build --release
 ```
 
+Normal Rust builds use committed Tree-sitter C artifacts and do not require
+Node.js, npm, or grammar regeneration.
+
+## Tree-sitter grammar development
+
+[`tree-sitter-structurizr-dsl/grammar.js`](tree-sitter-structurizr-dsl/grammar.js)
+is the syntax source of truth. Tree-sitter generates `src/parser.c`,
+`src/grammar.json`, `src/node-types.json`, and the headers under
+`src/tree_sitter/`. These artifacts are committed intentionally so Rust users
+do not need Node.js.
+
+Node.js is only needed when changing the grammar:
+
+```bash
+cd tree-sitter-structurizr-dsl
+npm install
+cd ..
+make grammar
+make grammar-test
+```
+
+After regeneration, verify both generated artifacts and Rust behavior:
+
+```bash
+make check
+```
+
 ## Run
 
 ```bash

@@ -1,0 +1,9 @@
+# Tree-sitter generated artifacts
+tree-sitter-structurizr-dsl/src/parser.c linguist-generated=true
+tree-sitter-structurizr-dsl/src/grammar.json linguist-generated=true
+tree-sitter-structurizr-dsl/src/node-types.json linguist-generated=true
+tree-sitter-structurizr-dsl/src/tree_sitter/* linguist-generated=true
+
+# Grammar and editor queries are maintained source
+tree-sitter-structurizr-dsl/grammar.js linguist-generated=false
+tree-sitter-structurizr-dsl/queries/*.scm linguist-generated=false
