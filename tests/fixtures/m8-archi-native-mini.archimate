@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<archimate:model xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:archimate="http://www.archimatetool.com/archimate" name="Mini &amp; Model" id="model-1" version="5.0.0">
+  <folder name="Strategy" id="folder-strategy" type="strategy"/>
+  <folder name="Business" id="folder-business" type="business">
+    <element xsi:type="archimate:BusinessActor" name="User &lt;Admin&gt;" id="actor-1"/>
+  </folder>
+  <folder name="Application" id="folder-application" type="application">
+    <element xsi:type="archimate:ApplicationComponent" name="Orders" id="app-1" fillColor="#b5ffff"/>
+  </folder>
+  <folder name="Technology &amp; Physical" id="folder-technology" type="technology">
+    <element xsi:type="archimate:Node" name="Primary Node" id="node-1"/>
+  </folder>
+  <folder name="Motivation" id="folder-motivation" type="motivation"/>
+  <folder name="Implementation &amp; Migration" id="folder-implementation" type="implementation_migration"/>
+  <folder name="Other" id="folder-other" type="other">
+    <element xsi:type="archimate:Grouping" name="Boundary" id="grouping-1"/>
+  </folder>
+  <folder name="Relations" id="folder-relations" type="relations">
+    <element xsi:type="archimate:FlowRelationship" name="Uses" id="relationship-1" source="actor-1" target="app-1"/>
+    <element xsi:type="archimate:CompositionRelationship" id="relationship-2" source="grouping-1" target="app-1"/>
+  </folder>
+  <folder name="Views" id="folder-views" type="diagrams">
+    <element xsi:type="archimate:ArchimateDiagramModel" name="Context" id="diagram-1">
+      <child xsi:type="archimate:Group" id="group-1" name="Users" fillColor="#eeeeee">
+        <bounds x="20" y="20" width="220" height="140"/>
+        <child xsi:type="archimate:DiagramObject" id="object-actor" archimateElement="actor-1" fillColor="#ffffb5" font="1|Arial|12.0|0|WINDOWS|1|Arial">
+          <bounds x="20" y="40" width="180" height="80"/>
+          <sourceConnection xsi:type="archimate:Connection" id="connection-1" source="object-actor" target="object-app" archimateRelationship="relationship-1">
+            <bendpoint startX="100" startY="-20" endX="-160" endY="-20"/>
+          </sourceConnection>
+        </child>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="object-app" archimateElement="app-1" targetConnections="connection-1" fillColor="#b5ffff">
+        <bounds x="320" y="60" width="180" height="80"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="object-node" archimateElement="node-1">
+        <bounds x="580" y="60" width="180" height="80"/>
+      </child>
+    </element>
+  </folder>
+</archimate:model>

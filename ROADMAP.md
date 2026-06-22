@@ -75,6 +75,10 @@ Local-only LSP for diagnostics, completion, hover, references, rename, semantic 
 
 Optional ArchiMate import and richer view/layout bridge while keeping ArchiMate semantics outside the C4 compiler core.
 
+Status: initial native bridge implemented with safe XML parsing, C4 projection, lossless sidecar
+round-tripping for unchanged projections, canonical diffing, and connection integrity validation.
+Semantic merging of edited C4 projections into existing native diagrams remains deferred.
+
 ## M12 — release engineering
 
 CI, cross-platform binaries, Homebrew, checksums, SBOM, and supply-chain review.

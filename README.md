@@ -83,7 +83,7 @@ Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
 
 ## Milestone 8 additions
 
-- A dependency-free exporter layer with deterministic filenames, ordering, IDs, and escaping.
+- A deterministic exporter layer with stable filenames, ordering, IDs, and escaping.
 - Structurizr-compatible JSON subset with c4c metadata for model, styles, views, docs, and ADRs.
 - Per-view D2, generic PlantUML, local-macro C4-PlantUML, DOT, and importable Draw.io XML.
 - ArchiMate 3.0 Model Exchange XML using a conservative C4 mapping and preserved c4c properties.
@@ -95,6 +95,7 @@ Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
 - Native Archi 5 XML with standard folders, mapped elements and relationships, and one editable diagram per c4c view.
 - Deterministic diagram objects, grid bounds, and connections without executing Archi or another renderer.
 - Separate `archi` aliases preserve the standards-oriented Open Group `archimate` exporter.
+- Safe native import, canonical diff, C4 projection, and lossless sidecar round-tripping for unchanged projections.
 
 ## Build
 
@@ -233,9 +234,38 @@ conservative `Association` type. ArchiMate visual views are deferred.
 
 `archimate` exports Open Group ArchiMate Model Exchange XML for standards-based interchange.
 `archi` exports Archi's native, Archi-specific `.archimate` XML so Archi can open the model
-directly with editable grid-laid-out diagram views. Native metadata properties, boundaries,
-and advanced manual layout are deferred; use the Open Group export when preserved `c4c.*`
-properties are more important than native diagrams.
+directly with editable diagram views. Container scopes are native nested diagram objects and
+connections are emitted only when both endpoint objects exist in the same view.
+
+## Archi native round-trip
+
+Native import generates a C4-compatible projection plus a JSON sidecar. The sidecar stores the
+complete original native XML, preserving folder/view order, IDs, groups, bounds, colors, fonts,
+connections, routing, and unknown native content. It is used only while the DSL file still matches
+the imported projection; a changed projection falls back to deterministic native generation with a
+warning instead of applying stale references.
+
+The projection uses readable name-derived identifiers. It preserves model hierarchy, native
+relationship types, view membership, and visual groups in ordinary DSL constructs and tags, so a
+sidecar-free export remains logically equivalent. Exact native identity, colors, bounds, routing,
+fonts, and unknown native content remain in the sidecar.
+
+```bash
+cargo run -- archi import model.archimate \
+  --out workspace.dsl --sidecar workspace.archi-sidecar.json
+cargo run -- export workspace.dsl --format archi --out out \
+  --archi-sidecar workspace.archi-sidecar.json
+cargo run -- archi diff model.archimate out/workspace.archimate
+cargo run -- archi diff model.archimate out-without-sidecar/workspace.archimate --semantic
+```
+
+`archi diff` ignores insignificant XML whitespace and attribute ordering, preserves meaningful
+child order and references, and treats `targetConnections` values as a set. The importer maps
+`BusinessActor` to `person`, `ApplicationComponent` to `softwareSystem`, `Node` to
+`deploymentNode`, and other native concepts to generic elements; exact native types remain in the
+sidecar. `archi diff --semantic` ignores generated IDs and visual formatting while comparing model
+folders, element and relationship semantics, view membership, groups, connections, and connection
+integrity. Merging arbitrary DSL edits back into the native sidecar is intentionally deferred.
 
 `svg` and `png` explicitly run the local Graphviz `dot` binary. If it is absent, c4c reports an
 installation hint and does not contact a remote service. `--strict-safe` rejects all renderer

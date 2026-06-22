@@ -3,8 +3,10 @@ use crate::compiler::{
     ViewKind, Workspace,
 };
 use std::{
+    collections::HashMap,
     fs,
     io::Write,
+    ops::Deref,
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -32,6 +34,38 @@ enum ExportFormat {
 struct ExportArtifact {
     path: PathBuf,
     content: Vec<u8>,
+}
+
+struct ArchiNativeConnection {
+    id: String,
+    source_element: String,
+    destination_element: String,
+    source_object: String,
+    destination_object: String,
+    relationship_id: String,
+    description: String,
+    synthetic: bool,
+}
+
+#[derive(Clone, Copy)]
+struct ArchiNativeBounds {
+    x: isize,
+    y: isize,
+    width: isize,
+    height: isize,
+}
+
+struct ArchiNativeLayout {
+    objects: HashMap<String, ArchiNativeBounds>,
+    groups: HashMap<usize, ArchiNativeBounds>,
+}
+
+impl Deref for ArchiNativeLayout {
+    type Target = HashMap<String, ArchiNativeBounds>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.objects
+    }
 }
 
 pub fn export(
@@ -62,6 +96,31 @@ pub fn export(
         _ => unreachable!(),
     };
     write_artifacts(output, artifacts)
+}
+
+pub fn export_with_archi_sidecar(
+    workspace: &Workspace,
+    format: &str,
+    output: &Path,
+    _options: ExportOptions,
+    sidecar: &Path,
+    projection: &Path,
+) -> Result<(), String> {
+    if ExportFormat::parse(format)? != ExportFormat::ArchiNative {
+        return Err("--archi-sidecar is only valid with --format archi".into());
+    }
+    fs::create_dir_all(output)
+        .map_err(|error| format!("cannot create {}: {error}", output.display()))?;
+    let content = match crate::archi_native::sidecar_xml(sidecar, projection)? {
+        Some(xml) => xml,
+        None => {
+            eprintln!(
+                "warning: Archi sidecar does not match the DSL projection; generated native IDs and layout will be used"
+            );
+            archi_native(workspace)
+        }
+    };
+    write_artifacts(output, vec![artifact("workspace.archimate", content)])
 }
 
 impl ExportFormat {
@@ -560,11 +619,10 @@ fn archi_native(workspace: &Workspace) -> String {
             "  <folder name=\"{}\" id=\"id-c4c-folder-{folder_type}\" type=\"{folder_type}\">\n",
             xml_attr(name)
         ));
-        for element in workspace
-            .elements
-            .iter()
-            .filter(|element| archi_native_folder(&element.kind) == *folder_type)
-        {
+        for element in workspace.elements.iter().filter(|element| {
+            archi_native_folder(&element.kind) == *folder_type
+                && !element.tags.iter().any(|tag| tag == "c4c_archi_synthetic")
+        }) {
             output.push_str(&format!(
                 "    <element xsi:type=\"archimate:{}\" name=\"{}\" id=\"{}\"",
                 archi_native_type(&element.kind),
@@ -587,6 +645,9 @@ fn archi_native(workspace: &Workspace) -> String {
         }
         output.push_str("  </folder>\n");
     }
+    if let Some(description) = &workspace.description {
+        output.push_str(&format!("  <purpose>{}</purpose>\n", xml_text(description)));
+    }
     output.push_str("</archimate:model>\n");
     output
 }
@@ -599,20 +660,21 @@ fn append_archi_native_relationships(output: &mut String, workspace: &Workspace)
             &relationship.source,
             &relationship.destination,
             relationship.description.as_deref(),
+            archi_native_relationship_type(&relationship.tags),
         );
     }
     for view in &workspace.views {
         let graph = compiler::view_graph(workspace, view);
-        for (position, relationship) in graph.relationships.iter().enumerate() {
-            let (id, synthetic) =
-                archi_native_view_relationship_id(workspace, view, relationship, position);
-            if synthetic {
+        let objects = archi_native_object_map(workspace, view, &graph);
+        for connection in archi_native_connections(workspace, view, &graph, &objects) {
+            if connection.synthetic {
                 append_archi_native_relationship(
                     output,
-                    &id,
-                    &relationship.source,
-                    &relationship.destination,
-                    Some(&relationship.description),
+                    &connection.relationship_id,
+                    &connection.source_element,
+                    &connection.destination_element,
+                    Some(&connection.description),
+                    "AssociationRelationship",
                 );
             }
         }
@@ -625,9 +687,10 @@ fn append_archi_native_relationship(
     source: &str,
     destination: &str,
     description: Option<&str>,
+    native_type: &str,
 ) {
     output.push_str(&format!(
-        "    <element xsi:type=\"archimate:TriggeringRelationship\" id=\"{}\" source=\"{}\" target=\"{}\"",
+        "    <element xsi:type=\"archimate:{native_type}\" id=\"{}\" source=\"{}\" target=\"{}\"",
         xml_attr(id),
         archi_native_element_id(source),
         archi_native_element_id(destination)
@@ -638,50 +701,224 @@ fn append_archi_native_relationship(
     output.push_str("/>\n");
 }
 
+fn archi_native_relationship_type(tags: &[String]) -> &str {
+    const TYPES: &[&str] = &[
+        "AccessRelationship",
+        "AggregationRelationship",
+        "AssignmentRelationship",
+        "AssociationRelationship",
+        "CompositionRelationship",
+        "FlowRelationship",
+        "InfluenceRelationship",
+        "RealizationRelationship",
+        "ServingRelationship",
+        "SpecializationRelationship",
+        "TriggeringRelationship",
+    ];
+    tags.iter()
+        .filter_map(|tag| tag.strip_prefix("archimate:"))
+        .find(|native_type| TYPES.contains(native_type))
+        .unwrap_or("AssociationRelationship")
+}
+
 fn append_archi_native_views(output: &mut String, workspace: &Workspace) {
     for view in &workspace.views {
         let graph = compiler::view_graph(workspace, view);
         let key = safe_name(view_key(view));
+        let objects = archi_native_object_map(workspace, view, &graph);
+        let connections = archi_native_connections(workspace, view, &graph, &objects);
+        let layout = archi_native_layout(workspace, view, &graph, &connections);
+        let scope = (view.kind == ViewKind::Container)
+            .then_some(view.scope.as_deref())
+            .flatten();
+        let nested = graph
+            .element_ids
+            .iter()
+            .filter(|identifier| {
+                find(workspace, identifier).is_some_and(|element| {
+                    element.kind == ElementKind::Container && element.parent.as_deref() == scope
+                })
+            })
+            .collect::<Vec<_>>();
+        let groups = workspace
+            .groups
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| {
+                graph.element_ids.iter().any(|identifier| {
+                    find(workspace, identifier).is_some_and(|element| element.group == Some(*index))
+                })
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
         output.push_str(&format!(
             "    <element xsi:type=\"archimate:ArchimateDiagramModel\" name=\"{}\" id=\"id-c4c-view-{key}\" connectionRouterType=\"2\">\n",
             xml_attr(view.title.as_deref().unwrap_or(view_key(view)))
         ));
-        for (position, identifier) in graph.element_ids.iter().enumerate() {
-            let Some(element) = find(workspace, identifier) else {
-                continue;
-            };
-            let object_id = archi_native_object_id(&key, identifier);
-            output.push_str(&format!(
-                "      <child xsi:type=\"archimate:DiagramObject\" id=\"{object_id}\" archimateElement=\"{}\" type=\"1\" fillColor=\"{}\">\n",
+        let object_xml = |identifier: &str,
+                          bounds: ArchiNativeBounds,
+                          indent: usize,
+                          children: &str|
+         -> Option<String> {
+            let element = find(workspace, identifier)?;
+            let object_id = &objects[identifier];
+            let target_connections = connections
+                .iter()
+                .filter(|connection| connection.destination_element == identifier)
+                .map(|connection| connection.id.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+            let spaces = " ".repeat(indent);
+            let mut xml = format!(
+                "{spaces}<child xsi:type=\"archimate:DiagramObject\" id=\"{object_id}\" archimateElement=\"{}\" type=\"1\" fillColor=\"{}\"{}>\n",
                 archi_native_element_id(identifier),
-                archi_native_fill(&element.kind)
+                archi_native_fill(&element.kind),
+                if target_connections.is_empty() {
+                    String::new()
+                } else {
+                    format!(" targetConnections=\"{target_connections}\"")
+                }
+            );
+            xml.push_str(&format!(
+                "{spaces}  <bounds x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"/>\n",
+                bounds.x, bounds.y, bounds.width, bounds.height
             ));
-            let (x, y) = archi_native_position(view, position);
-            output.push_str(&format!(
-                "        <bounds x=\"{x}\" y=\"{y}\" width=\"180\" height=\"80\"/>\n"
-            ));
-            for (relationship_position, relationship) in graph
-                .relationships
+            for (route, connection) in connections
                 .iter()
                 .enumerate()
-                .filter(|(_, relationship)| relationship.source == *identifier)
+                .filter(|(_, connection)| connection.source_element == identifier)
             {
-                let (relationship_id, _) = archi_native_view_relationship_id(
-                    workspace,
-                    view,
-                    relationship,
-                    relationship_position,
-                );
-                output.push_str(&format!(
-                    "        <sourceConnection xsi:type=\"archimate:Connection\" id=\"id-c4c-connection-{key}-{}\" source=\"{object_id}\" target=\"{}\" archimateRelationship=\"{relationship_id}\"/>\n",
-                    relationship_position + 1,
-                    archi_native_object_id(&key, &relationship.destination)
+                xml.push_str(&format!(
+                    "{spaces}  <sourceConnection xsi:type=\"archimate:Connection\" id=\"{}\" source=\"{}\" target=\"{}\" archimateRelationship=\"{}\">\n",
+                    connection.id,
+                    connection.source_object,
+                    connection.destination_object,
+                    connection.relationship_id
                 ));
+                if let Some([first, second]) =
+                    archi_native_bendpoints(workspace, view, &layout, connection, route)
+                {
+                    for (start_x, start_y, end_x, end_y) in [first, second] {
+                        xml.push_str(&format!(
+                            "{spaces}    <bendpoint startX=\"{start_x}\" startY=\"{start_y}\" endX=\"{end_x}\" endY=\"{end_y}\"/>\n"
+                        ));
+                    }
+                }
+                xml.push_str(&format!("{spaces}  </sourceConnection>\n"));
+            }
+            xml.push_str(children);
+            xml.push_str(&format!("{spaces}</child>\n"));
+            Some(xml)
+        };
+        for identifier in &graph.element_ids {
+            if nested.contains(&identifier)
+                || find(workspace, identifier)
+                    .and_then(|element| element.group)
+                    .is_some_and(|group| groups.contains(&group))
+            {
+                continue;
+            }
+            let Some(bounds) = layout.get(identifier).copied() else {
+                continue;
+            };
+            let mut children = String::new();
+            if Some(identifier.as_str()) == scope {
+                for child in &nested {
+                    let child_bounds = layout[*child];
+                    let relative = ArchiNativeBounds {
+                        x: child_bounds.x - bounds.x,
+                        y: child_bounds.y - bounds.y,
+                        ..child_bounds
+                    };
+                    if let Some(xml) = object_xml(child, relative, 8, "") {
+                        children.push_str(&xml);
+                    }
+                }
+            }
+            if let Some(xml) = object_xml(identifier, bounds, 6, &children) {
+                output.push_str(&xml);
+            }
+        }
+        for group_index in groups {
+            let members = graph
+                .element_ids
+                .iter()
+                .filter(|identifier| {
+                    find(workspace, identifier)
+                        .is_some_and(|element| element.group == Some(group_index))
+                })
+                .collect::<Vec<_>>();
+            let Some(bounds) = layout.groups.get(&group_index).copied() else {
+                continue;
+            };
+            output.push_str(&format!(
+                "      <child xsi:type=\"archimate:Group\" id=\"id-c4c-viewgroup-{key}-{}\" name=\"{}\">\n        <bounds x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"/>\n",
+                group_index + 1,
+                xml_attr(&workspace.groups[group_index].name),
+                bounds.x,
+                bounds.y,
+                bounds.width,
+                bounds.height
+            ));
+            for identifier in members {
+                let member = layout[identifier];
+                let relative = ArchiNativeBounds {
+                    x: member.x - bounds.x,
+                    y: member.y - bounds.y,
+                    ..member
+                };
+                if let Some(xml) = object_xml(identifier, relative, 8, "") {
+                    output.push_str(&xml);
+                }
             }
             output.push_str("      </child>\n");
         }
         output.push_str("    </element>\n");
     }
+}
+
+fn archi_native_object_map(
+    workspace: &Workspace,
+    view: &View,
+    graph: &compiler::ViewGraph,
+) -> HashMap<String, String> {
+    let key = safe_name(view_key(view));
+    graph
+        .element_ids
+        .iter()
+        .filter(|identifier| find(workspace, identifier).is_some())
+        .map(|identifier| (identifier.clone(), archi_native_object_id(&key, identifier)))
+        .collect()
+}
+
+fn archi_native_connections(
+    workspace: &Workspace,
+    view: &View,
+    graph: &compiler::ViewGraph,
+    objects: &HashMap<String, String>,
+) -> Vec<ArchiNativeConnection> {
+    let key = safe_name(view_key(view));
+    graph
+        .relationships
+        .iter()
+        .enumerate()
+        .filter_map(|(position, relationship)| {
+            let source_object = objects.get(&relationship.source)?;
+            let destination_object = objects.get(&relationship.destination)?;
+            let (relationship_id, synthetic) =
+                archi_native_view_relationship_id(workspace, view, relationship, position);
+            Some(ArchiNativeConnection {
+                id: format!("id-c4c-connection-{key}-{}", position + 1),
+                source_element: relationship.source.clone(),
+                destination_element: relationship.destination.clone(),
+                source_object: source_object.clone(),
+                destination_object: destination_object.clone(),
+                relationship_id,
+                description: relationship.description.clone(),
+                synthetic,
+            })
+        })
+        .collect()
 }
 
 fn archi_native_view_relationship_id(
@@ -695,8 +932,10 @@ fn archi_native_view_relationship_id(
         model.source == relationship.source && model.destination == relationship.destination
     });
     let exact = exact.or_else(|| {
-        workspace.relationships.iter().position(|model| {
-            model.source == relationship.source && model.destination == relationship.destination
+        relationship.relationship_index.and_then(|_| {
+            workspace.relationships.iter().position(|model| {
+                model.source == relationship.source && model.destination == relationship.destination
+            })
         })
     });
     exact.map_or_else(
@@ -714,17 +953,979 @@ fn archi_native_view_relationship_id(
     )
 }
 
-fn archi_native_position(view: &View, position: usize) -> (usize, usize) {
-    // ponytail: stable grid first; add boundary-aware layout only when manual use demands it.
+fn archi_native_internal_hub<'a>(
+    members: &[&'a String],
+    connections: &[ArchiNativeConnection],
+) -> Option<&'a String> {
+    if members.len() < 3 {
+        return None;
+    }
+    members
+        .iter()
+        .copied()
+        .filter_map(|candidate| {
+            let connected = members
+                .iter()
+                .copied()
+                .filter(|other| {
+                    *other != candidate
+                        && connections.iter().any(|connection| {
+                            (connection.source_element.as_str() == candidate.as_str()
+                                && connection.destination_element.as_str() == other.as_str())
+                                || (connection.destination_element.as_str() == candidate.as_str()
+                                    && connection.source_element.as_str() == other.as_str())
+                        })
+                })
+                .count();
+            (connected * 2 > members.len() - 1).then_some((candidate, connected))
+        })
+        .max_by_key(|(_, connected)| *connected)
+        .map(|(candidate, _)| candidate)
+}
+
+fn archi_native_external_score(
+    workspace: &Workspace,
+    connections: &[ArchiNativeConnection],
+    identifier: &str,
+    own_group: usize,
+) -> (usize, usize) {
+    let (mut groups, mut elements) = (Vec::new(), Vec::new());
+    for connection in connections.iter().filter(|connection| {
+        connection.source_element == identifier || connection.destination_element == identifier
+    }) {
+        let other = if connection.source_element == identifier {
+            &connection.destination_element
+        } else {
+            &connection.source_element
+        };
+        let group = find(workspace, other).and_then(|element| element.group);
+        if group == Some(own_group) {
+            continue;
+        }
+        if !elements.contains(other) {
+            elements.push(other.clone());
+        }
+        if let Some(group) = group.filter(|group| !groups.contains(group)) {
+            groups.push(group);
+        }
+    }
+    (groups.len(), elements.len())
+}
+
+fn archi_native_has_ungrouped_neighbor(
+    workspace: &Workspace,
+    connections: &[ArchiNativeConnection],
+    identifier: &str,
+) -> bool {
+    connections.iter().any(|connection| {
+        let other = if connection.source_element == identifier {
+            Some(&connection.destination_element)
+        } else if connection.destination_element == identifier {
+            Some(&connection.source_element)
+        } else {
+            None
+        };
+        other.is_some_and(|other| {
+            find(workspace, other).is_some_and(|element| element.group.is_none())
+        })
+    })
+}
+
+fn archi_native_crossing_count(
+    layout: &HashMap<String, ArchiNativeBounds>,
+    connections: &[ArchiNativeConnection],
+) -> usize {
+    connections
+        .iter()
+        .filter_map(|connection| {
+            Some((
+                layout.get(&connection.source_element)?,
+                layout.get(&connection.destination_element)?,
+                connection,
+            ))
+        })
+        .map(|(source, target, connection)| {
+            let (source_x, source_y) = (source.x + source.width / 2, source.y + source.height / 2);
+            let (target_x, target_y) = (target.x + target.width / 2, target.y + target.height / 2);
+            layout
+                .iter()
+                .filter(|(identifier, _)| {
+                    *identifier != &connection.source_element
+                        && *identifier != &connection.destination_element
+                })
+                .filter(|(_, bounds)| {
+                    let clearance = ArchiNativeBounds {
+                        x: bounds.x - 10,
+                        y: bounds.y - 10,
+                        width: bounds.width + 20,
+                        height: bounds.height + 20,
+                    };
+                    segment_crosses_bounds(source_x, source_y, target_x, target_y, clearance)
+                })
+                .count()
+        })
+        .sum()
+}
+
+fn archi_native_reduce_group_crossings(
+    workspace: &Workspace,
+    graph: &compiler::ViewGraph,
+    connections: &[ArchiNativeConnection],
+    groups: &HashMap<usize, ArchiNativeBounds>,
+    layout: &mut HashMap<String, ArchiNativeBounds>,
+) {
+    for _ in 0..2 {
+        let mut improved = false;
+        for identifier in &graph.element_ids {
+            let Some(group) = find(workspace, identifier).and_then(|element| element.group) else {
+                continue;
+            };
+            let Some(frame) = groups.get(&group) else {
+                continue;
+            };
+            let current = layout[identifier];
+            if current.width != 180
+                || archi_native_has_ungrouped_neighbor(workspace, connections, identifier)
+            {
+                continue;
+            }
+            let current_score = archi_native_crossing_count(layout, connections);
+            let mut best = (current_score, 0, current);
+            let mut x = frame.x + 20;
+            while x <= frame.x + frame.width - current.width - 20 {
+                let candidate = ArchiNativeBounds { x, ..current };
+                let free = layout.iter().all(|(other, bounds)| {
+                    other == identifier || !bounds_overlap(candidate, *bounds)
+                });
+                if free {
+                    layout.insert(identifier.clone(), candidate);
+                    let score = archi_native_crossing_count(layout, connections);
+                    let choice = (score, (x - current.x).abs(), candidate);
+                    if (choice.0, choice.1) < (best.0, best.1) {
+                        best = choice;
+                    }
+                }
+                x += 20;
+            }
+            layout.insert(
+                identifier.clone(),
+                if best.0 < current_score {
+                    best.2
+                } else {
+                    current
+                },
+            );
+            improved |= best.0 < current_score;
+        }
+        if !improved {
+            break;
+        }
+    }
+}
+
+fn archi_native_layout(
+    workspace: &Workspace,
+    view: &View,
+    graph: &compiler::ViewGraph,
+    connections: &[ArchiNativeConnection],
+) -> ArchiNativeLayout {
     let vertical = view.auto_layout.as_ref().is_some_and(|layout| {
         matches!(layout.direction.to_ascii_lowercase().as_str(), "tb" | "bt")
     });
-    let (column, row) = if vertical {
-        (position / 4, position % 4)
-    } else {
-        (position % 4, position / 4)
+    let route_margin = 120 + connections.len() as isize * 30;
+    let scope = (view.kind == ViewKind::Container)
+        .then_some(view.scope.as_deref())
+        .flatten();
+    let nested = graph
+        .element_ids
+        .iter()
+        .filter(|identifier| {
+            find(workspace, identifier).is_some_and(|element| {
+                element.kind == ElementKind::Container && element.parent.as_deref() == scope
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut layout: HashMap<String, ArchiNativeBounds> = HashMap::new();
+    let visible_groups = workspace
+        .groups
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| {
+            graph.element_ids.iter().any(|identifier| {
+                find(workspace, identifier).is_some_and(|element| element.group == Some(*index))
+            })
+        })
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    if vertical && !visible_groups.is_empty() {
+        let widest_group = visible_groups
+            .iter()
+            .map(|group| {
+                let members = graph
+                    .element_ids
+                    .iter()
+                    .filter(|identifier| {
+                        find(workspace, identifier)
+                            .is_some_and(|element| element.group == Some(*group))
+                    })
+                    .collect::<Vec<_>>();
+                let columns = if archi_native_internal_hub(&members, connections).is_some() {
+                    members.len().saturating_sub(1)
+                } else {
+                    members.len()
+                };
+                columns as isize * 220 + 40
+            })
+            .max()
+            .unwrap_or(700);
+        let common_group_width = widest_group.max(700);
+        let mut cursor = 40;
+        let mut group_bounds = HashMap::new();
+        for group_index in &visible_groups {
+            let members = graph
+                .element_ids
+                .iter()
+                .filter(|identifier| {
+                    find(workspace, identifier)
+                        .is_some_and(|element| element.group == Some(*group_index))
+                })
+                .collect::<Vec<_>>();
+            if members.len() < 2 {
+                let frame = ArchiNativeBounds {
+                    x: route_margin,
+                    y: cursor,
+                    width: common_group_width,
+                    height: 140,
+                };
+                group_bounds.insert(*group_index, frame);
+                for identifier in members {
+                    let x = connections
+                        .iter()
+                        .filter_map(|connection| {
+                            let other = if connection.source_element == *identifier {
+                                &connection.destination_element
+                            } else if connection.destination_element == *identifier {
+                                &connection.source_element
+                            } else {
+                                return None;
+                            };
+                            layout
+                                .get(other)
+                                .map(|bounds| bounds.x + bounds.width / 2 - 90)
+                        })
+                        .next()
+                        .unwrap_or(frame.x + (frame.width - 180) / 2)
+                        .clamp(frame.x + 20, frame.x + frame.width - 200);
+                    layout.insert(
+                        identifier.clone(),
+                        ArchiNativeBounds {
+                            x,
+                            y: cursor + 40,
+                            width: 180,
+                            height: 80,
+                        },
+                    );
+                }
+                cursor += 200;
+                continue;
+            }
+            let Some(hub) = archi_native_internal_hub(&members, connections) else {
+                let frame = ArchiNativeBounds {
+                    x: route_margin,
+                    y: cursor,
+                    width: common_group_width,
+                    height: 140,
+                };
+                group_bounds.insert(*group_index, frame);
+                let anchor = *members
+                    .iter()
+                    .filter(|identifier| {
+                        !archi_native_has_ungrouped_neighbor(workspace, connections, identifier)
+                    })
+                    .max_by_key(|identifier| {
+                        archi_native_external_score(
+                            workspace,
+                            connections,
+                            identifier,
+                            *group_index,
+                        )
+                    })
+                    .unwrap_or(&members[0]);
+                let mut edges = members
+                    .iter()
+                    .copied()
+                    .filter(|identifier| {
+                        archi_native_has_ungrouped_neighbor(workspace, connections, identifier)
+                    })
+                    .collect::<Vec<_>>();
+                edges.sort();
+                let left_edge = edges.first().copied();
+                let right_edge = edges.get(1).copied();
+                let mut middle = members
+                    .into_iter()
+                    .filter(|identifier| {
+                        Some(*identifier) != left_edge && Some(*identifier) != right_edge
+                    })
+                    .collect::<Vec<_>>();
+                middle.sort_by_key(|identifier| {
+                    std::cmp::Reverse(archi_native_external_score(
+                        workspace,
+                        connections,
+                        identifier,
+                        *group_index,
+                    ))
+                });
+                if let Some(position) = middle.iter().position(|identifier| *identifier == anchor) {
+                    let anchor = middle.remove(position);
+                    middle.insert(0, anchor);
+                }
+                let mut ordered = Vec::new();
+                if let Some(identifier) = left_edge {
+                    ordered.push(identifier);
+                }
+                ordered.extend(middle);
+                if let Some(identifier) = right_edge {
+                    ordered.push(identifier);
+                }
+                ordered.extend(edges.into_iter().skip(2));
+                let anchor_position = ordered
+                    .iter()
+                    .position(|identifier| *identifier == anchor)
+                    .unwrap_or(ordered.len() / 2);
+                let target_center = connections.iter().find_map(|connection| {
+                    let other = if connection.source_element == *anchor {
+                        &connection.destination_element
+                    } else if connection.destination_element == *anchor {
+                        &connection.source_element
+                    } else {
+                        return None;
+                    };
+                    let other_group = find(workspace, other).and_then(|element| element.group)?;
+                    (other_group != *group_index)
+                        .then(|| layout.get(other))
+                        .flatten()
+                        .map(|bounds| bounds.x + bounds.width / 2)
+                });
+                let minimum_left = frame.x + 20;
+                let maximum_left = frame.x + frame.width - ordered.len() as isize * 200;
+                let centered_left =
+                    frame.x + (frame.width - (ordered.len() as isize * 200 - 20)) / 2;
+                let left = target_center
+                    .map(|center| center - anchor_position as isize * 200 - 90)
+                    .unwrap_or(centered_left)
+                    .clamp(minimum_left, maximum_left.max(minimum_left));
+                for (position, identifier) in ordered.into_iter().enumerate() {
+                    layout.insert(
+                        identifier.clone(),
+                        ArchiNativeBounds {
+                            x: left + position as isize * 200,
+                            y: cursor + 40,
+                            width: 180,
+                            height: 80,
+                        },
+                    );
+                }
+                cursor += 240;
+                continue;
+            };
+            let peers = members
+                .into_iter()
+                .filter(|identifier| *identifier != hub)
+                .collect::<Vec<_>>();
+            let rank = visible_groups
+                .iter()
+                .position(|candidate| candidate == group_index)
+                .unwrap();
+            let (mut top, mut bottom) = (Vec::new(), Vec::new());
+            for identifier in peers {
+                let (mut above, mut below) = (0, 0);
+                for connection in connections.iter().filter(|connection| {
+                    connection.source_element == *identifier
+                        || connection.destination_element == *identifier
+                }) {
+                    let other = if connection.source_element == *identifier {
+                        &connection.destination_element
+                    } else {
+                        &connection.source_element
+                    };
+                    let Some(other_group) =
+                        find(workspace, other).and_then(|element| element.group)
+                    else {
+                        continue;
+                    };
+                    let Some(other_rank) = visible_groups
+                        .iter()
+                        .position(|candidate| *candidate == other_group)
+                    else {
+                        continue;
+                    };
+                    above += usize::from(other_rank < rank);
+                    below += usize::from(other_rank > rank);
+                }
+                if below > 0 && below >= above {
+                    bottom.push(identifier);
+                } else if above > 0 || top.len() <= bottom.len() {
+                    top.push(identifier);
+                } else {
+                    bottom.push(identifier);
+                }
+            }
+            let group_width = common_group_width;
+            group_bounds.insert(
+                *group_index,
+                ArchiNativeBounds {
+                    x: route_margin,
+                    y: cursor,
+                    width: group_width,
+                    height: 800,
+                },
+            );
+            let hub_width = group_width * 4 / 5;
+            layout.insert(
+                hub.clone(),
+                ArchiNativeBounds {
+                    x: route_margin + (group_width - hub_width) / 2,
+                    y: cursor + 360,
+                    width: hub_width,
+                    height: 80,
+                },
+            );
+            let (mut hub_above, mut hub_below) = (false, false);
+            for connection in connections.iter().filter(|connection| {
+                connection.source_element == *hub || connection.destination_element == *hub
+            }) {
+                let other = if connection.source_element == *hub {
+                    &connection.destination_element
+                } else {
+                    &connection.source_element
+                };
+                let Some(other_group) = find(workspace, other).and_then(|element| element.group)
+                else {
+                    continue;
+                };
+                let Some(other_rank) = visible_groups
+                    .iter()
+                    .position(|candidate| *candidate == other_group)
+                else {
+                    continue;
+                };
+                hub_above |= other_rank < rank;
+                hub_below |= other_rank > rank;
+            }
+            for (row, y) in [(&top, cursor + 40), (&bottom, cursor + 700)] {
+                let reserve_center = if y < cursor + 360 {
+                    hub_above
+                } else {
+                    hub_below
+                };
+                let center = route_margin + group_width / 2;
+                let mut row_bounds = Vec::new();
+                for (position, identifier) in row.iter().enumerate() {
+                    let available = group_width - 40 - 180;
+                    let default_x = route_margin
+                        + 20
+                        + if row.len() > 1 {
+                            position as isize * available / (row.len() - 1) as isize
+                        } else {
+                            available / 2
+                        };
+                    let external_neighbors = connections
+                        .iter()
+                        .filter_map(|connection| {
+                            let other = if connection.source_element.as_str() == identifier.as_str()
+                            {
+                                &connection.destination_element
+                            } else if connection.destination_element.as_str() == identifier.as_str()
+                            {
+                                &connection.source_element
+                            } else {
+                                return None;
+                            };
+                            let other_group =
+                                find(workspace, other).and_then(|element| element.group)?;
+                            (other_group != *group_index)
+                                .then(|| layout.get(other))
+                                .flatten()
+                                .map(|bounds| (other, *bounds))
+                        })
+                        .collect::<Vec<_>>();
+                    let desired = external_neighbors
+                        .first()
+                        .map(|(_, bounds)| bounds.x + bounds.width / 2 - 90)
+                        .unwrap_or(default_x)
+                        .clamp(route_margin + 20, route_margin + group_width - 200);
+                    let x = [
+                        desired,
+                        default_x,
+                        center - 200,
+                        center + 20,
+                        route_margin + 20,
+                        route_margin + (group_width - 180) / 2,
+                        route_margin + group_width - 200,
+                    ]
+                    .into_iter()
+                    .filter(|x| !reserve_center || center < *x || center > *x + 180)
+                    .filter(|x| {
+                        let candidate = ArchiNativeBounds {
+                            x: *x,
+                            y,
+                            width: 180,
+                            height: 80,
+                        };
+                        row_bounds
+                            .iter()
+                            .all(|bounds| !bounds_overlap(candidate, *bounds))
+                    })
+                    .min_by_key(|x| {
+                        let source = (*x + 90, y + 40);
+                        let crossings = external_neighbors
+                            .iter()
+                            .map(|(neighbor, target)| {
+                                let target =
+                                    (target.x + target.width / 2, target.y + target.height / 2);
+                                layout
+                                    .iter()
+                                    .filter(|(other, bounds)| {
+                                        other.as_str() != neighbor.as_str()
+                                            && other.as_str() != identifier.as_str()
+                                            && segment_crosses_bounds(
+                                                source.0, source.1, target.0, target.1, **bounds,
+                                            )
+                                    })
+                                    .count()
+                            })
+                            .sum::<usize>();
+                        (crossings, (*x - desired).abs())
+                    })
+                    .unwrap_or(default_x);
+                    let bounds = ArchiNativeBounds {
+                        x,
+                        y,
+                        width: 180,
+                        height: 80,
+                    };
+                    layout.insert((*identifier).clone(), bounds);
+                    row_bounds.push(bounds);
+                }
+            }
+            cursor += 900;
+        }
+        archi_native_reduce_group_crossings(
+            workspace,
+            graph,
+            connections,
+            &group_bounds,
+            &mut layout,
+        );
+        let all_group_bounds = group_bounds.values().copied().collect::<Vec<_>>();
+        let mut ungrouped_y = 80;
+        for identifier in &graph.element_ids {
+            if layout.contains_key(identifier) {
+                continue;
+            }
+            let neighbors = connections
+                .iter()
+                .filter_map(|connection| {
+                    let other = if connection.source_element == *identifier {
+                        &connection.destination_element
+                    } else if connection.destination_element == *identifier {
+                        &connection.source_element
+                    } else {
+                        return None;
+                    };
+                    find(workspace, other)
+                        .and_then(|element| element.group)
+                        .filter(|group| group_bounds.contains_key(group))?;
+                    Some(other)
+                })
+                .collect::<Vec<_>>();
+            let mut candidates = Vec::new();
+            for neighbor in &neighbors {
+                let neighbor_bounds = layout[*neighbor];
+                let group = find(workspace, neighbor)
+                    .and_then(|element| element.group)
+                    .unwrap();
+                let bounds = group_bounds[&group];
+                candidates.extend([
+                    ArchiNativeBounds {
+                        x: bounds.x - 240,
+                        y: neighbor_bounds.y,
+                        width: 180,
+                        height: 80,
+                    },
+                    ArchiNativeBounds {
+                        x: bounds.x + bounds.width + 60,
+                        y: neighbor_bounds.y,
+                        width: 180,
+                        height: 80,
+                    },
+                    ArchiNativeBounds {
+                        x: neighbor_bounds.x + (neighbor_bounds.width - 180) / 2,
+                        y: bounds.y - 140,
+                        width: 180,
+                        height: 80,
+                    },
+                    ArchiNativeBounds {
+                        x: neighbor_bounds.x + (neighbor_bounds.width - 180) / 2,
+                        y: bounds.y + bounds.height + 60,
+                        width: 180,
+                        height: 80,
+                    },
+                ]);
+            }
+            let chosen = candidates
+                .into_iter()
+                .enumerate()
+                .min_by_key(|(order, candidate)| {
+                    let score = archi_native_position_score(
+                        &layout,
+                        &all_group_bounds,
+                        connections,
+                        identifier,
+                        &neighbors,
+                        *candidate,
+                    );
+                    (
+                        score.0,
+                        score.1,
+                        score.2,
+                        usize::from(order % 4 >= 2),
+                        score.3,
+                        *order,
+                    )
+                })
+                .map(|(_, candidate)| candidate)
+                .unwrap_or_else(|| {
+                    let mut candidate = ArchiNativeBounds {
+                        x: route_margin + 60 + common_group_width,
+                        y: ungrouped_y,
+                        width: 180,
+                        height: 80,
+                    };
+                    while layout
+                        .values()
+                        .any(|bounds| bounds_overlap(candidate, *bounds))
+                    {
+                        candidate.y += 140;
+                    }
+                    candidate
+                });
+            layout.insert(identifier.clone(), chosen);
+            ungrouped_y += 140;
+        }
+        return ArchiNativeLayout {
+            objects: layout,
+            groups: group_bounds,
+        };
+    }
+    let mut cursor = 40;
+    for identifier in &graph.element_ids {
+        if nested.contains(&identifier) {
+            continue;
+        }
+        if Some(identifier.as_str()) == scope && !nested.is_empty() {
+            let size = 40 + nested.len() as isize * 220;
+            let bounds = if vertical {
+                ArchiNativeBounds {
+                    x: route_margin,
+                    y: cursor,
+                    width: 220,
+                    height: size,
+                }
+            } else {
+                ArchiNativeBounds {
+                    x: cursor,
+                    y: route_margin,
+                    width: size,
+                    height: 160,
+                }
+            };
+            layout.insert(identifier.clone(), bounds);
+            for (position, child) in nested.iter().enumerate() {
+                layout.insert(
+                    (*child).clone(),
+                    if vertical {
+                        ArchiNativeBounds {
+                            x: bounds.x + 20,
+                            y: bounds.y + 40 + position as isize * 220,
+                            width: 180,
+                            height: 80,
+                        }
+                    } else {
+                        ArchiNativeBounds {
+                            x: bounds.x + 20 + position as isize * 220,
+                            y: bounds.y + 60,
+                            width: 180,
+                            height: 80,
+                        }
+                    },
+                );
+            }
+            cursor += size + 80;
+        } else {
+            layout.insert(
+                identifier.clone(),
+                if vertical {
+                    ArchiNativeBounds {
+                        x: route_margin + 20,
+                        y: cursor,
+                        width: 180,
+                        height: 80,
+                    }
+                } else {
+                    ArchiNativeBounds {
+                        x: cursor,
+                        y: route_margin + 60,
+                        width: 180,
+                        height: 80,
+                    }
+                },
+            );
+            cursor += 260;
+        }
+    }
+    ArchiNativeLayout {
+        objects: layout,
+        groups: HashMap::new(),
+    }
+}
+
+fn archi_native_position_score(
+    layout: &HashMap<String, ArchiNativeBounds>,
+    groups: &[ArchiNativeBounds],
+    connections: &[ArchiNativeConnection],
+    identifier: &str,
+    neighbors: &[&String],
+    candidate: ArchiNativeBounds,
+) -> (usize, usize, usize, isize) {
+    let source = (
+        candidate.x + candidate.width / 2,
+        candidate.y + candidate.height / 2,
+    );
+    let overlaps = layout
+        .values()
+        .filter(|bounds| bounds_overlap(candidate, **bounds))
+        .count()
+        + groups
+            .iter()
+            .filter(|bounds| bounds_overlap(candidate, **bounds))
+            .count();
+    let mut object_crossings = 0;
+    let mut line_crossings = 0;
+    let mut length = 0;
+    for neighbor in neighbors {
+        let target_bounds = layout[*neighbor];
+        let target = (
+            target_bounds.x + target_bounds.width / 2,
+            target_bounds.y + target_bounds.height / 2,
+        );
+        object_crossings += layout
+            .iter()
+            .filter(|(other, bounds)| {
+                other.as_str() != neighbor.as_str()
+                    && segment_crosses_bounds(source.0, source.1, target.0, target.1, **bounds)
+            })
+            .count();
+        line_crossings += connections
+            .iter()
+            .filter(|connection| {
+                connection.source_element != identifier
+                    && connection.destination_element != identifier
+                    && connection.source_element.as_str() != neighbor.as_str()
+                    && connection.destination_element.as_str() != neighbor.as_str()
+            })
+            .filter_map(|connection| {
+                let start = layout.get(&connection.source_element)?;
+                let end = layout.get(&connection.destination_element)?;
+                Some((
+                    (start.x + start.width / 2, start.y + start.height / 2),
+                    (end.x + end.width / 2, end.y + end.height / 2),
+                ))
+            })
+            .filter(|(start, end)| segments_cross(source, target, *start, *end))
+            .count();
+        length += (source.0 - target.0).abs() + (source.1 - target.1).abs();
+    }
+    (overlaps, object_crossings, line_crossings, length)
+}
+
+fn bounds_overlap(left: ArchiNativeBounds, right: ArchiNativeBounds) -> bool {
+    left.x < right.x + right.width
+        && left.x + left.width > right.x
+        && left.y < right.y + right.height
+        && left.y + left.height > right.y
+}
+
+fn segments_cross(
+    first_start: (isize, isize),
+    first_end: (isize, isize),
+    second_start: (isize, isize),
+    second_end: (isize, isize),
+) -> bool {
+    let side = |start: (isize, isize), end: (isize, isize), point: (isize, isize)| {
+        (end.0 - start.0) as i128 * (point.1 - start.1) as i128
+            - (end.1 - start.1) as i128 * (point.0 - start.0) as i128
     };
-    (40 + column * 260, 40 + row * 160)
+    let (a, b) = (
+        side(first_start, first_end, second_start),
+        side(first_start, first_end, second_end),
+    );
+    let (c, d) = (
+        side(second_start, second_end, first_start),
+        side(second_start, second_end, first_end),
+    );
+    (a > 0) != (b > 0) && (c > 0) != (d > 0)
+}
+
+fn archi_native_bendpoints(
+    workspace: &Workspace,
+    view: &View,
+    layout: &ArchiNativeLayout,
+    connection: &ArchiNativeConnection,
+    route: usize,
+) -> Option<[(isize, isize, isize, isize); 2]> {
+    let source = layout.get(&connection.source_element)?;
+    let target = layout.get(&connection.destination_element)?;
+    let (source_x, source_y) = (source.x + source.width / 2, source.y + source.height / 2);
+    let (target_x, target_y) = (target.x + target.width / 2, target.y + target.height / 2);
+    let blocked = layout.iter().any(|(identifier, bounds)| {
+        identifier != &connection.source_element
+            && identifier != &connection.destination_element
+            && segment_crosses_bounds(source_x, source_y, target_x, target_y, *bounds)
+    });
+    if !blocked {
+        return None;
+    }
+    let group = find(workspace, &connection.source_element)
+        .and_then(|element| element.group)
+        .filter(|group| {
+            find(workspace, &connection.destination_element)
+                .is_some_and(|element| element.group == Some(*group))
+        });
+    if let Some(group) = group {
+        let bounds = *layout.groups.get(&group)?;
+        let offset = 10 + route as isize % 3 * 10;
+        let candidates = [
+            ((bounds.x + offset, source_y), (bounds.x + offset, target_y)),
+            (
+                (bounds.x + bounds.width - offset, source_y),
+                (bounds.x + bounds.width - offset, target_y),
+            ),
+            ((source_x, bounds.y + offset), (target_x, bounds.y + offset)),
+            (
+                (source_x, bounds.y + bounds.height - offset),
+                (target_x, bounds.y + bounds.height - offset),
+            ),
+        ];
+        // ponytail: four internal lanes cover this layout; use a graph router if layouts become free-form.
+        if let Some((first, second)) = candidates.into_iter().find(|(first, second)| {
+            archi_native_path_clear(
+                layout,
+                connection,
+                (source_x, source_y),
+                *first,
+                *second,
+                (target_x, target_y),
+            )
+        }) {
+            return Some([
+                (
+                    first.0 - source_x,
+                    first.1 - source_y,
+                    first.0 - target_x,
+                    first.1 - target_y,
+                ),
+                (
+                    second.0 - source_x,
+                    second.1 - source_y,
+                    second.0 - target_x,
+                    second.1 - target_y,
+                ),
+            ]);
+        }
+        return None;
+    }
+    let lane = 60 + route as isize * 30;
+    let (first_x, first_y, second_x, second_y) =
+        if view.auto_layout.as_ref().is_some_and(|layout| {
+            matches!(layout.direction.to_ascii_lowercase().as_str(), "tb" | "bt")
+        }) {
+            (lane, source_y, lane, target_y)
+        } else {
+            (source_x, lane, target_x, lane)
+        };
+    Some([
+        (
+            first_x - source_x,
+            first_y - source_y,
+            first_x - target_x,
+            first_y - target_y,
+        ),
+        (
+            second_x - source_x,
+            second_y - source_y,
+            second_x - target_x,
+            second_y - target_y,
+        ),
+    ])
+}
+
+fn archi_native_path_clear(
+    layout: &HashMap<String, ArchiNativeBounds>,
+    connection: &ArchiNativeConnection,
+    source: (isize, isize),
+    first: (isize, isize),
+    second: (isize, isize),
+    target: (isize, isize),
+) -> bool {
+    [(source, first), (first, second), (second, target)]
+        .into_iter()
+        .all(|(start, end)| {
+            layout.iter().all(|(identifier, bounds)| {
+                identifier == &connection.source_element
+                    || identifier == &connection.destination_element
+                    || !segment_crosses_bounds(start.0, start.1, end.0, end.1, *bounds)
+            })
+        })
+}
+
+fn segment_crosses_bounds(
+    source_x: isize,
+    source_y: isize,
+    target_x: isize,
+    target_y: isize,
+    bounds: ArchiNativeBounds,
+) -> bool {
+    let mut near: f64 = 0.0;
+    let mut far: f64 = 1.0;
+    for (start, delta, low, high) in [
+        (
+            source_x as f64,
+            (target_x - source_x) as f64,
+            bounds.x as f64,
+            (bounds.x + bounds.width) as f64,
+        ),
+        (
+            source_y as f64,
+            (target_y - source_y) as f64,
+            bounds.y as f64,
+            (bounds.y + bounds.height) as f64,
+        ),
+    ] {
+        if delta == 0.0 {
+            if start < low || start > high {
+                return false;
+            }
+            continue;
+        }
+        let (entry, exit) = ((low - start) / delta, (high - start) / delta);
+        near = near.max(entry.min(exit));
+        far = far.min(entry.max(exit));
+        if near > far {
+            return false;
+        }
+    }
+    true
 }
 
 fn archi_native_element_id(identifier: &str) -> String {
@@ -1408,7 +2609,10 @@ fn append_style_note(workspace: &Workspace, output: &mut String, comment: &str) 
 mod tests {
     use super::*;
     use crate::compiler::{compile_file, compile_file_with_options, validate, CompileOptions};
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::{
+        collections::HashSet,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[test]
     fn exports_all_m8_text_formats_deterministically() {
@@ -1540,7 +2744,7 @@ mod tests {
             "ApplicationComponent",
             "Node",
             "Grouping",
-            "TriggeringRelationship",
+            "AssociationRelationship",
             "ArchimateDiagramModel",
             "DiagramObject",
             "Connection",
@@ -1553,10 +2757,35 @@ mod tests {
                 .count(),
             workspace.views.len()
         );
-        assert!(native.contains("<bounds x=\"40\" y=\"40\" width=\"180\" height=\"80\"/>"));
+        assert!(native.contains("width=\"180\" height=\"80\"/>"));
         assert!(native.contains("<sourceConnection xsi:type=\"archimate:Connection\""));
+        assert_eq!(native.matches("<bendpoint ").count() % 2, 0);
+        assert!(
+            native.matches("<bendpoint ").count()
+                < native.matches("<sourceConnection ").count() * 2
+        );
+        assert!(native.contains("connectionRouterType=\"2\""));
         assert!(native.contains("Milestone 8 &lt;Exporters&gt; &amp; Exchange"));
         assert!(native.contains("User &lt;Admin&gt; &amp; Owner"));
+        assert!(native.contains("name=\"Open orders\""));
+        assert!(native.contains("name=\"Post entry\""));
+        let container_view = native
+            .split("id=\"id-c4c-view-containers\"")
+            .nth(1)
+            .unwrap()
+            .split("    </element>")
+            .next()
+            .unwrap();
+        let scope = container_view
+            .find("id=\"id-c4c-viewobject-containers-system\"")
+            .unwrap();
+        let container = container_view
+            .find("id=\"id-c4c-viewobject-containers-system_2eapi\"")
+            .unwrap();
+        let scope_end = scope + container_view[scope..].find("\n      </child>").unwrap();
+        assert!(container > scope && container < scope_end);
+        assert_archi_connection_integrity(&native);
+        assert_archi_routes_clear_boxes(&workspace);
 
         let output = temporary_directory("archi-native");
         for format in ["archi", "archi-native", "archimate-native"] {
@@ -1584,9 +2813,176 @@ mod tests {
             fs::read_to_string(output.join("workspace.archimate.xml")).unwrap(),
             open_group
         );
+        let normalized_open_group = open_group.replace(env!("CARGO_MANIFEST_DIR"), "$ROOT");
+        assert_eq!(fnv1a(&normalized_open_group), 5_863_218_997_552_418_175);
         assert!(open_group.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.0/\""));
         assert!(!open_group.contains("ArchimateDiagramModel"));
         fs::remove_dir_all(output).unwrap();
+    }
+
+    #[test]
+    fn archi_native_layout_places_connected_objects_on_clear_short_routes() {
+        let workspace = crate::compiler::compile(
+            r#"workspace "Routing" {
+  model {
+    group "Upper" {
+      hub = softwareSystem "Hub"
+      peer1 = softwareSystem "Peer 1"
+      peer2 = softwareSystem "Peer 2"
+      peer3 = softwareSystem "Peer 3"
+    }
+    group "Lower" {
+      target = softwareSystem "Target"
+    }
+    group "Flat" {
+      flat1 = softwareSystem "Flat 1"
+      flat2 = softwareSystem "Flat 2"
+    }
+    outside = softwareSystem "Outside"
+    hub -> peer1
+    hub -> peer2
+    hub -> peer3
+    hub -> target
+    outside -> hub
+  }
+  views {
+    systemLandscape routing {
+      include *
+      autolayout tb
+    }
+  }
+}"#,
+        )
+        .unwrap();
+        let view = &workspace.views[0];
+        let graph = compiler::view_graph(&workspace, view);
+        let objects = archi_native_object_map(&workspace, view, &graph);
+        let connections = archi_native_connections(&workspace, view, &graph, &objects);
+        let layout = archi_native_layout(&workspace, view, &graph, &connections);
+        let upper = layout.groups[&0];
+        assert_eq!(upper.height, 800);
+        assert!(layout["hub"].width * 5 >= upper.width * 4);
+        let flat = layout.groups[&2];
+        assert_eq!(flat.height, 140);
+        assert_eq!(layout["flat1"].width, 180);
+        assert_eq!(layout["flat2"].width, 180);
+        assert!(layout
+            .groups
+            .values()
+            .all(|bounds| bounds.x == upper.x && bounds.width == upper.width));
+        assert_eq!(
+            layout["hub"].x + layout["hub"].width / 2,
+            layout["target"].x + layout["target"].width / 2
+        );
+        let outside = layout["outside"];
+        assert!(
+            outside.x + outside.width + 60 == upper.x || outside.x == upper.x + upper.width + 60
+        );
+        assert!(connections.iter().enumerate().all(|(route, connection)| {
+            archi_native_bendpoints(&workspace, view, &layout, connection, route).is_none()
+        }));
+    }
+
+    fn assert_archi_connection_integrity(native: &str) {
+        let relationships = native
+            .lines()
+            .filter(|line| line.contains("Relationship\""))
+            .filter_map(|line| xml_attribute(line, "id"))
+            .collect::<HashSet<_>>();
+        for diagram in native
+            .split("<element xsi:type=\"archimate:ArchimateDiagramModel\"")
+            .skip(1)
+        {
+            let diagram = diagram.split("    </element>").next().unwrap();
+            let objects = diagram
+                .lines()
+                .filter(|line| line.contains("xsi:type=\"archimate:DiagramObject\""))
+                .map(|line| {
+                    (
+                        xml_attribute(line, "id").unwrap(),
+                        xml_attribute(line, "targetConnections").unwrap_or(""),
+                    )
+                })
+                .collect::<HashMap<_, _>>();
+            for line in diagram
+                .lines()
+                .filter(|line| line.contains("xsi:type=\"archimate:Connection\""))
+            {
+                let id = xml_attribute(line, "id").unwrap();
+                let source = xml_attribute(line, "source").unwrap();
+                let target = xml_attribute(line, "target").unwrap();
+                let relationship = xml_attribute(line, "archimateRelationship").unwrap();
+                assert!(
+                    objects.contains_key(source),
+                    "missing source object {source}"
+                );
+                assert!(
+                    objects.contains_key(target),
+                    "missing target object {target}"
+                );
+                assert!(
+                    relationships.contains(relationship),
+                    "missing relationship {relationship}"
+                );
+                assert!(
+                    objects[target].split_whitespace().any(|value| value == id),
+                    "target {target} does not reference connection {id}"
+                );
+            }
+        }
+    }
+
+    fn assert_archi_routes_clear_boxes(workspace: &Workspace) {
+        for view in &workspace.views {
+            let graph = compiler::view_graph(workspace, view);
+            let objects = archi_native_object_map(workspace, view, &graph);
+            let connections = archi_native_connections(workspace, view, &graph, &objects);
+            let layout = archi_native_layout(workspace, view, &graph, &connections);
+            let vertical = view.auto_layout.as_ref().is_some_and(|layout| {
+                matches!(layout.direction.to_ascii_lowercase().as_str(), "tb" | "bt")
+            });
+            for (route, connection) in connections.iter().enumerate() {
+                if let Some(bends) =
+                    archi_native_bendpoints(workspace, view, &layout, connection, route)
+                {
+                    let source = layout[&connection.source_element];
+                    if vertical {
+                        let lane = source.x + source.width / 2 + bends[0].0;
+                        assert!(layout.values().all(|bounds| lane < bounds.x));
+                    } else {
+                        let lane = source.y + source.height / 2 + bends[0].1;
+                        assert!(layout.values().all(|bounds| lane < bounds.y));
+                    }
+                    continue;
+                }
+                let source = layout[&connection.source_element];
+                let target = layout[&connection.destination_element];
+                assert!(layout.iter().all(|(identifier, bounds)| {
+                    identifier == &connection.source_element
+                        || identifier == &connection.destination_element
+                        || !segment_crosses_bounds(
+                            source.x + source.width / 2,
+                            source.y + source.height / 2,
+                            target.x + target.width / 2,
+                            target.y + target.height / 2,
+                            *bounds,
+                        )
+                }));
+            }
+        }
+    }
+
+    fn xml_attribute<'a>(line: &'a str, name: &str) -> Option<&'a str> {
+        let needle = format!("{name}=\"");
+        let start = line.find(&needle)? + needle.len();
+        let end = line[start..].find('"')? + start;
+        Some(&line[start..end])
+    }
+
+    fn fnv1a(value: &str) -> u64 {
+        value.bytes().fold(0xcbf29ce484222325, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+        })
     }
 
     #[test]
