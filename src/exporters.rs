@@ -47,7 +47,7 @@ struct ArchiNativeConnection {
     synthetic: bool,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ArchiNativeBounds {
     x: isize,
     y: isize,
@@ -748,7 +748,7 @@ fn archi_native(workspace: &Workspace) -> String {
             output.push_str(&format!(
                 "    <element xsi:type=\"archimate:{}\" name=\"{}\" id=\"{}\"",
                 archi_native_type(&element.kind),
-                xml_attr(&element.name),
+                xml_attr(&archi_native_element_name(element)),
                 archi_native_element_id(&element.id)
             ));
             if let Some(description) = &element.description {
@@ -827,6 +827,24 @@ fn archi_native_relationship_type(relationship: &Relationship) -> &str {
     compiler::relationship_archimate_type(relationship).unwrap_or("AssociationRelationship")
 }
 
+fn archi_native_element_name(element: &Element) -> String {
+    let trimmed = element.name.trim();
+    if trimmed.is_empty() {
+        format!("{} {}", archi_native_type(&element.kind), element.id)
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn archi_native_view_name(view: &View) -> String {
+    let name = view.title.as_deref().unwrap_or(view_key(view)).trim();
+    if name.is_empty() {
+        view_key(view).to_string()
+    } else {
+        name.to_string()
+    }
+}
+
 fn append_archi_native_views(output: &mut String, workspace: &Workspace) {
     for view in &workspace.views {
         let graph = compiler::view_graph(workspace, view);
@@ -859,7 +877,7 @@ fn append_archi_native_views(output: &mut String, workspace: &Workspace) {
             .collect::<Vec<_>>();
         output.push_str(&format!(
             "    <element xsi:type=\"archimate:ArchimateDiagramModel\" name=\"{}\" id=\"id-c4c-view-{key}\" connectionRouterType=\"2\">\n",
-            xml_attr(view.title.as_deref().unwrap_or(view_key(view)))
+            xml_attr(&archi_native_view_name(view))
         ));
         let object_xml = |identifier: &str,
                           bounds: ArchiNativeBounds,
@@ -1243,6 +1261,236 @@ fn archi_native_reduce_group_crossings(
     }
 }
 
+fn archi_native_viewpoint_layout(
+    workspace: &Workspace,
+    view: &View,
+    graph: &compiler::ViewGraph,
+    connections: &[ArchiNativeConnection],
+) -> ArchiNativeLayout {
+    let viewpoint = archi_native_viewpoint(view).unwrap_or("fallback");
+    let horizontal = matches!(
+        viewpoint,
+        "applicationCooperation" | "applicationUsage" | "informationStructure" | "fallback"
+    );
+    let (base_x, base_y, rank_gap, row_gap, width, height) = if horizontal {
+        (160, 160, 420, 170, 210, 90)
+    } else {
+        (160, 160, 220, 230, 210, 90)
+    };
+    let mut layout = HashMap::new();
+    let mut ranked = graph
+        .element_ids
+        .iter()
+        .filter(|identifier| find(workspace, identifier).is_some())
+        .map(|identifier| {
+            (
+                archi_native_viewpoint_rank(workspace, viewpoint, connections, identifier),
+                identifier,
+            )
+        })
+        .collect::<Vec<_>>();
+    ranked.sort_by_key(|(rank, identifier)| (*rank, identifier.as_str()));
+    let mut rank_counts = HashMap::<usize, usize>::new();
+    for (rank, identifier) in ranked {
+        let index = *rank_counts.get(&rank).unwrap_or(&0) as isize;
+        let default = if horizontal {
+            ArchiNativeBounds {
+                x: base_x + rank as isize * rank_gap,
+                y: base_y + index * row_gap,
+                width,
+                height,
+            }
+        } else {
+            ArchiNativeBounds {
+                x: base_x + index * row_gap,
+                y: base_y + rank as isize * rank_gap,
+                width,
+                height,
+            }
+        };
+        let manual = archi_native_manual_bounds(view, identifier, default);
+        let mut bounds = manual.unwrap_or(default);
+        if manual.is_none() {
+            while layout.values().any(|existing| {
+                bounds_overlap(
+                    archi_native_padded(bounds, 30),
+                    archi_native_padded(*existing, 30),
+                )
+            }) {
+                if horizontal {
+                    bounds.y += row_gap;
+                } else {
+                    bounds.x += row_gap;
+                }
+            }
+            *rank_counts.entry(rank).or_default() += 1;
+        }
+        layout.insert(identifier.clone(), bounds);
+    }
+    ArchiNativeLayout {
+        objects: layout,
+        groups: HashMap::new(),
+    }
+}
+
+fn archi_native_viewpoint(view: &View) -> Option<&str> {
+    property_value(&view.properties, "viewpoint")
+}
+
+fn archi_native_viewpoint_rank(
+    workspace: &Workspace,
+    viewpoint: &str,
+    connections: &[ArchiNativeConnection],
+    identifier: &str,
+) -> usize {
+    let Some(element) = find(workspace, identifier) else {
+        return 9;
+    };
+    if archi_native_type(&element.kind) == "Junction" {
+        let mut ranks = connections
+            .iter()
+            .filter_map(|connection| {
+                let other = if connection.source_element == identifier {
+                    &connection.destination_element
+                } else if connection.destination_element == identifier {
+                    &connection.source_element
+                } else {
+                    return None;
+                };
+                find(workspace, other)
+                    .map(|element| archi_native_base_rank(viewpoint, &element.kind))
+            })
+            .collect::<Vec<_>>();
+        ranks.sort_unstable();
+        return ranks.get(ranks.len() / 2).copied().unwrap_or(2);
+    }
+    archi_native_base_rank(viewpoint, &element.kind)
+}
+
+fn archi_native_base_rank(viewpoint: &str, kind: &ElementKind) -> usize {
+    let native = archi_native_type(kind);
+    let layer = archi_native_layer(kind);
+    let role = archi_native_role(kind);
+    match viewpoint {
+        "applicationCooperation" | "applicationUsage" | "informationStructure" => {
+            match (layer, role) {
+                ("business", "active") => 0,
+                ("business", _) => 1,
+                ("application", _)
+                    if native.ends_with("Service") || native.ends_with("Interface") =>
+                {
+                    1
+                }
+                ("application", "active") => 2,
+                ("application", "passive") => 4,
+                ("application", _) => 3,
+                ("technology" | "physical" | "implementation_migration", _) => 4,
+                ("motivation" | "strategy", _) => 0,
+                _ => 4,
+            }
+        }
+        "motivation" | "strategy" => match native {
+            "Stakeholder" | "Driver" | "Assessment" => 0,
+            "Goal" | "Outcome" | "Principle" => 1,
+            "Requirement" | "Constraint" => 2,
+            _ if layer == "strategy" => 3,
+            _ if matches!(layer, "application" | "technology" | "physical") => 4,
+            _ => 3,
+        },
+        "technology" | "technologyUsage" | "implementationAndDeployment" => match native {
+            _ if native.ends_with("Service") || native.ends_with("Interface") => 0,
+            "Node" | "Device" | "SystemSoftware" | "CommunicationNetwork" | "Path" => 1,
+            "Artifact" => 2,
+            _ if layer == "physical" => 3,
+            _ if layer == "implementation_migration" => 4,
+            _ => 1,
+        },
+        "layered" => match layer {
+            "business" => 0,
+            "application" => 1,
+            "technology" => 2,
+            "physical" => 3,
+            "implementation_migration" => 4,
+            "motivation" | "strategy" => 0,
+            _ => 5,
+        },
+        _ => match layer {
+            "business" | "motivation" | "strategy" => 0,
+            "application" => 1,
+            "technology" => 2,
+            "physical" => 3,
+            "implementation_migration" => 4,
+            _ => 5,
+        },
+    }
+}
+
+fn archi_native_layer(kind: &ElementKind) -> &'static str {
+    match kind {
+        ElementKind::Person => "business",
+        ElementKind::SoftwareSystem
+        | ElementKind::Container
+        | ElementKind::Component
+        | ElementKind::SoftwareSystemInstance
+        | ElementKind::ContainerInstance => "application",
+        ElementKind::DeploymentNode | ElementKind::InfrastructureNode => "technology",
+        ElementKind::ArchiMate(kind) => compiler::archimate_element_layer(kind).unwrap_or("other"),
+        _ => "other",
+    }
+}
+
+fn archi_native_role(kind: &ElementKind) -> &'static str {
+    match kind {
+        ElementKind::Person
+        | ElementKind::SoftwareSystem
+        | ElementKind::Container
+        | ElementKind::Component
+        | ElementKind::SoftwareSystemInstance
+        | ElementKind::ContainerInstance
+        | ElementKind::DeploymentNode
+        | ElementKind::InfrastructureNode => "active",
+        ElementKind::ArchiMate(kind) => {
+            compiler::archimate_element_role(kind).unwrap_or("composite")
+        }
+        _ => "composite",
+    }
+}
+
+fn archi_native_manual_bounds(
+    view: &View,
+    identifier: &str,
+    default: ArchiNativeBounds,
+) -> Option<ArchiNativeBounds> {
+    let has_manual = ["x", "y", "width", "height"]
+        .into_iter()
+        .any(|name| archi_native_view_object_property(view, identifier, name).is_some());
+    has_manual.then(|| ArchiNativeBounds {
+        x: archi_native_view_object_property(view, identifier, "x")
+            .and_then(|value| value.parse::<isize>().ok())
+            .unwrap_or(default.x),
+        y: archi_native_view_object_property(view, identifier, "y")
+            .and_then(|value| value.parse::<isize>().ok())
+            .unwrap_or(default.y),
+        width: archi_native_view_object_property(view, identifier, "width")
+            .and_then(|value| value.parse::<isize>().ok())
+            .unwrap_or(default.width)
+            .max(1),
+        height: archi_native_view_object_property(view, identifier, "height")
+            .and_then(|value| value.parse::<isize>().ok())
+            .unwrap_or(default.height)
+            .max(1),
+    })
+}
+
+fn archi_native_padded(bounds: ArchiNativeBounds, padding: isize) -> ArchiNativeBounds {
+    ArchiNativeBounds {
+        x: bounds.x - padding,
+        y: bounds.y - padding,
+        width: bounds.width + padding * 2,
+        height: bounds.height + padding * 2,
+    }
+}
+
 fn archi_native_layout(
     workspace: &Workspace,
     view: &View,
@@ -1278,6 +1526,9 @@ fn archi_native_layout(
         })
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
+    if view.kind == ViewKind::ArchiMate && visible_groups.is_empty() {
+        return archi_native_viewpoint_layout(workspace, view, graph, connections);
+    }
     if vertical && !visible_groups.is_empty() {
         let widest_group = visible_groups
             .iter()
@@ -1820,27 +2071,9 @@ fn apply_archi_native_manual_layout(view: &View, layout: &mut HashMap<String, Ar
     let identifiers = layout.keys().cloned().collect::<Vec<_>>();
     for identifier in identifiers {
         let current = layout[&identifier];
-        let x = archi_native_view_object_property(view, &identifier, "x")
-            .and_then(|value| value.parse::<isize>().ok())
-            .unwrap_or(current.x);
-        let y = archi_native_view_object_property(view, &identifier, "y")
-            .and_then(|value| value.parse::<isize>().ok())
-            .unwrap_or(current.y);
-        let width = archi_native_view_object_property(view, &identifier, "width")
-            .and_then(|value| value.parse::<isize>().ok())
-            .unwrap_or(current.width);
-        let height = archi_native_view_object_property(view, &identifier, "height")
-            .and_then(|value| value.parse::<isize>().ok())
-            .unwrap_or(current.height);
-        layout.insert(
-            identifier,
-            ArchiNativeBounds {
-                x,
-                y,
-                width,
-                height,
-            },
-        );
+        if let Some(bounds) = archi_native_manual_bounds(view, &identifier, current) {
+            layout.insert(identifier, bounds);
+        }
     }
 }
 
@@ -2045,15 +2278,17 @@ fn archi_native_bendpoints(
         }
         return None;
     }
-    let lane = 60 + route as isize * 30;
-    let (first_x, first_y, second_x, second_y) =
-        if view.auto_layout.as_ref().is_some_and(|layout| {
-            matches!(layout.direction.to_ascii_lowercase().as_str(), "tb" | "bt")
-        }) {
-            (lane, source_y, lane, target_y)
-        } else {
-            (source_x, lane, target_x, lane)
-        };
+    let route_vertical = archi_native_route_vertical(view);
+    let lane = if route_vertical {
+        layout.values().map(|bounds| bounds.x).min().unwrap_or(60) - 40
+    } else {
+        layout.values().map(|bounds| bounds.y).min().unwrap_or(60) - 40
+    };
+    let (first_x, first_y, second_x, second_y) = if route_vertical {
+        (lane, source_y, lane, target_y)
+    } else {
+        (source_x, lane, target_x, lane)
+    };
     Some([
         (
             first_x - source_x,
@@ -2068,6 +2303,25 @@ fn archi_native_bendpoints(
             second_y - target_y,
         ),
     ])
+}
+
+fn archi_native_route_vertical(view: &View) -> bool {
+    view.auto_layout
+        .as_ref()
+        .is_some_and(|layout| matches!(layout.direction.to_ascii_lowercase().as_str(), "tb" | "bt"))
+        || archi_native_viewpoint(view).is_some_and(|viewpoint| {
+            matches!(
+                viewpoint,
+                "motivation"
+                    | "strategy"
+                    | "technology"
+                    | "technologyUsage"
+                    | "implementationAndDeployment"
+                    | "implementationAndMigration"
+                    | "migration"
+                    | "layered"
+            )
+        })
 }
 
 fn archi_native_path_clear(
@@ -3122,6 +3376,68 @@ mod tests {
     }
 
     #[test]
+    fn exports_m85_readable_viewpoint_layouts() {
+        let workspace = compile_file("tests/fixtures/m85-archimate-views-layout.dsl").unwrap();
+        validate(&workspace).unwrap();
+        let native = archi_native(&workspace);
+        assert_eq!(native, archi_native(&workspace));
+        assert!(!native.contains("lineStyle="));
+        assert!(!native.contains("name=\"\""));
+        for value in ["ArchimateDiagramModel", "DiagramObject", "Connection"] {
+            assert!(native.contains(&format!("xsi:type=\"archimate:{value}\"")));
+        }
+        assert_archi_connection_integrity(&native);
+
+        let app = workspace
+            .views
+            .iter()
+            .find(|view| view.key.as_deref() == Some("m85-app"))
+            .unwrap();
+        let app_layout = archi_native_test_layout(&workspace, app);
+        assert_eq!(
+            app_layout["gateway"],
+            ArchiNativeBounds {
+                x: 1000,
+                y: 320,
+                width: 220,
+                height: 90,
+            }
+        );
+        assert_layout_has_no_overlaps(&app_layout);
+        assert!(app_layout["operator"].x < app_layout["gateway"].x);
+        assert!(app_layout["gateway"].x < app_layout["ledger"].x);
+        assert!(
+            app_layout
+                .values()
+                .map(|bounds| bounds.x)
+                .collect::<HashSet<_>>()
+                .len()
+                > 2
+        );
+
+        let motivation = workspace
+            .views
+            .iter()
+            .find(|view| view.key.as_deref() == Some("m85-motivation"))
+            .unwrap();
+        let motivation_layout = archi_native_test_layout(&workspace, motivation);
+        assert_layout_has_no_overlaps(&motivation_layout);
+        assert!(motivation_layout["regulation"].y < motivation_layout["traceabilityGoal"].y);
+        assert!(motivation_layout["traceabilityGoal"].y < motivation_layout["auditRequirement"].y);
+
+        let technology = workspace
+            .views
+            .iter()
+            .find(|view| view.key.as_deref() == Some("m85-technology"))
+            .unwrap();
+        let technology_layout = archi_native_test_layout(&workspace, technology);
+        assert_layout_has_no_overlaps(&technology_layout);
+        assert_eq!(technology_layout["runtime"].y, 380);
+        assert!(technology_layout["techService"].y < technology_layout["runtime"].y);
+        assert!(technology_layout["runtime"].y < technology_layout["gatewayArtifact"].y);
+    }
+
+    #[test]
     fn archi_native_layout_places_connected_objects_on_clear_short_routes() {
         let workspace = crate::compiler::compile(
             r#"workspace "Routing" {
@@ -3269,6 +3585,28 @@ mod tests {
                             *bounds,
                         )
                 }));
+            }
+        }
+    }
+
+    fn archi_native_test_layout(
+        workspace: &Workspace,
+        view: &View,
+    ) -> HashMap<String, ArchiNativeBounds> {
+        let graph = compiler::view_graph(workspace, view);
+        let objects = archi_native_object_map(workspace, view, &graph);
+        let connections = archi_native_connections(workspace, view, &graph, &objects);
+        archi_native_layout(workspace, view, &graph, &connections).objects
+    }
+
+    fn assert_layout_has_no_overlaps(layout: &HashMap<String, ArchiNativeBounds>) {
+        let items = layout.iter().collect::<Vec<_>>();
+        for (index, (left_id, left)) in items.iter().enumerate() {
+            for (right_id, right) in items.iter().skip(index + 1) {
+                assert!(
+                    !bounds_overlap(**left, **right),
+                    "{left_id} overlaps {right_id}: {left:?} {right:?}"
+                );
             }
         }
     }

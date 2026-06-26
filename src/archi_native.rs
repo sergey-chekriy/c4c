@@ -528,7 +528,7 @@ fn append_projected_element(
     indent: usize,
 ) {
     let spaces = " ".repeat(indent);
-    let name = dsl_string(&element.name);
+    let name = dsl_string(&projected_element_name(element));
     let description = element
         .description
         .as_ref()
@@ -555,6 +555,15 @@ fn projected_element_keyword(element: &ArchiElement) -> &'static str {
         };
     }
     crate::compiler::archimate_element_keyword(&element.native_type).unwrap_or("grouping")
+}
+
+fn projected_element_name(element: &ArchiElement) -> String {
+    let trimmed = element.name.trim();
+    if trimmed.is_empty() {
+        format!("{} {}", element.native_type, dsl_identifier(&element.id))
+    } else {
+        trimmed.to_string()
+    }
 }
 
 fn relationship_access_direction(relationship: &ArchiRelationship) -> Option<&'static str> {

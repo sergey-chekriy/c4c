@@ -34,6 +34,7 @@ Implemented in this repo:
 - Archi-native `.archimate` export with editable diagram views.
 - Explicit c4c ArchiMate extension profile with ArchiMate elements, relationship types, formatting metadata, `archimateView`, and manual object layout.
 - Practical ArchiMate semantic conformance with layer/role classification, relationship warnings, strict-mode errors, junctions, access direction, and viewpoint metadata.
+- Viewpoint-aware native Archi layouts with non-overlapping objects, fallback names, and safer connection routing.
 - Optional SVG/PNG generation through an explicitly requested local Graphviz renderer.
 
 
@@ -106,6 +107,13 @@ Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
 - Explicit junction keywords, AccessRelationship direction, relationship identifiers, and `archimateView viewpoint` metadata.
 - Native Archi export keeps exact supported ArchiMate types and connection integrity without unsupported attributes such as `lineStyle`.
 - Open Group ArchiMate export preserves explicit relationship types and AccessRelationship direction where practical.
+
+## Milestone 8.5 additions
+
+- Native Archi diagrams use viewpoint-aware layout: left-to-right application views and top-down motivation/technology views.
+- Diagram objects get non-empty fallback names, wider spacing, and deterministic non-overlap placement.
+- Manual `object` bounds are preserved exactly; missing objects are auto-placed around them.
+- Connection routing keeps existing native Archi bendpoint syntax and avoids unsupported attributes.
 
 ## Build
 
@@ -309,6 +317,12 @@ This is not standard Structurizr DSL. It is a c4c extension profile intended for
 Default validation warns about questionable ArchiMate relationships and viewpoint mismatches.
 Use `--strict` for semantic-conformance errors without enabling any network or renderer behavior;
 `--strict-safe` keeps the existing safety checks and also enables strict semantic validation.
+
+## ArchiMate layout and notation
+
+Native Archi export uses viewpoint-aware layout and safer notation mapping without unsupported
+Archi attributes such as `lineStyle`. It improves generated diagrams, but full native Archi
+round-trip visual fidelity is deferred to M8.6.
 
 `archi diff` ignores insignificant XML whitespace and attribute ordering, preserves meaningful
 child order and references, and treats `targetConnections` values as a set. The importer emits

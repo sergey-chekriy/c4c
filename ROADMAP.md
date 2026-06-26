@@ -75,6 +75,12 @@ M8.4 adds practical semantic conformance for the explicit ArchiMate extension pr
 
 Status: implemented as a practical validation/export layer, not official ArchiMate certification or a complete formal relationship matrix.
 
+## M8.5 — ArchiMate viewpoints, notation, and layout
+
+M8.5 improves generated native Archi diagrams with viewpoint-aware layout, fallback names, non-overlap placement, safer notation/style mapping, and clearer deterministic connection routing.
+
+Status: implemented for generated native Archi output. Full native Archi round-trip visual fidelity remains M8.6.
+
 ## M9 — compatibility suite
 
 Add fixture coverage for every language construct and compare outputs against expected snapshots.

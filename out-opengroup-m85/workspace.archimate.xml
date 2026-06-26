@@ -1,0 +1,333 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<model xmlns="http://www.opengroup.org/xsd/archimate/3.0/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" identifier="id-c4c-workspace">
+  <name xml:lang="en">M85 ArchiMate Views Layout</name>
+  <elements>
+    <element identifier="id-element-1-operator" xsi:type="BusinessActor">
+      <name xml:lang="en">Operator</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">operator</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">BusinessActor</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-2-onboarding" xsi:type="BusinessProcess">
+      <name xml:lang="en">Client Onboarding</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">onboarding</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">BusinessProcess</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-3-apiService" xsi:type="ApplicationService">
+      <name xml:lang="en">Trading API Service</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">apiService</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">ApplicationService</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-4-portal" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Client Portal</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">portal</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">ApplicationComponent</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-5-gateway" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Internal API Gateway</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">gateway</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">ApplicationComponent</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-background"><value xml:lang="en">#008e00</value></property>
+        <property propertyDefinitionRef="property-color"><value xml:lang="en">#ffffff</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-6-matcher" xsi:type="ApplicationFunction">
+      <name xml:lang="en">Order Matcher</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">matcher</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">ApplicationFunction</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-7-ledger" xsi:type="DataObject">
+      <name xml:lang="en">Ledger Entry</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">ledger</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">DataObject</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-8-accepted" xsi:type="Junction">
+      <name xml:lang="en">Accepted Order</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">accepted</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Junction</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">and</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-9-audit" xsi:type="ApplicationComponent">
+      <name xml:lang="en">Audit Trail</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">audit</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">ApplicationComponent</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-10-compliance" xsi:type="Stakeholder">
+      <name xml:lang="en">Compliance</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">compliance</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Stakeholder</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-11-regulation" xsi:type="Driver">
+      <name xml:lang="en">Regulatory pressure</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">regulation</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Driver</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-12-traceabilityGoal" xsi:type="Goal">
+      <name xml:lang="en">Traceable settlement</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">traceabilityGoal</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Goal</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-13-auditRequirement" xsi:type="Requirement">
+      <name xml:lang="en">Every order is auditable</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">auditRequirement</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Requirement</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-14-tradingCapability" xsi:type="Capability">
+      <name xml:lang="en">Digital asset trading</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">tradingCapability</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Capability</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-15-techService" xsi:type="TechnologyService">
+      <name xml:lang="en">Runtime Service</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">techService</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">TechnologyService</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-16-runtime" xsi:type="Node">
+      <name xml:lang="en">Primary Runtime Node</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">runtime</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Node</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-17-gatewayArtifact" xsi:type="Artifact">
+      <name xml:lang="en">Gateway Artifact</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">gatewayArtifact</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Artifact</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+      </properties>
+    </element>
+    <element identifier="id-element-18-rack" xsi:type="Equipment">
+      <name xml:lang="en">Rack A</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">rack</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Equipment</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+      </properties>
+    </element>
+  </elements>
+  <relationships>
+    <relationship identifier="id-relationship-1" source="id-element-1-operator" target="id-element-2-onboarding" xsi:type="Triggering">
+      <name xml:lang="en">starts onboarding</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-1</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">starts onboarding</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-type"><value xml:lang="en">TriggeringRelationship</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="id-relationship-2" source="id-element-2-onboarding" target="id-element-3-apiService" xsi:type="Serving">
+      <name xml:lang="en">requests account activation</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-2</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">requests account activation</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-type"><value xml:lang="en">ServingRelationship</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="id-relationship-3" source="id-element-4-portal" target="id-element-5-gateway" xsi:type="Flow">
+      <name xml:lang="en">Calls trading gateway over secure API with customer and order context</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-3</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">Calls trading gateway over secure API with customer and order context</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-type"><value xml:lang="en">FlowRelationship</value></property>
+        <property propertyDefinitionRef="property-color"><value xml:lang="en">#00aa00</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="id-relationship-4" source="id-element-5-gateway" target="id-element-8-accepted" xsi:type="Flow">
+      <name xml:lang="en">validates order</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-4</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">validates order</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-type"><value xml:lang="en">FlowRelationship</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="id-relationship-5" source="id-element-8-accepted" target="id-element-6-matcher" xsi:type="Triggering">
+      <name xml:lang="en">routes accepted order</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-5</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">routes accepted order</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-type"><value xml:lang="en">TriggeringRelationship</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="id-relationship-6" source="id-element-6-matcher" target="id-element-7-ledger" xsi:type="Access" accessType="Write">
+      <name xml:lang="en">writes ledger entry</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-6</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">writes ledger entry</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-type"><value xml:lang="en">AccessRelationship</value></property>
+        <property propertyDefinitionRef="property-access"><value xml:lang="en">write</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="id-relationship-7" source="id-element-5-gateway" target="id-element-7-ledger" xsi:type="Access" accessType="Read">
+      <name xml:lang="en">reads latest ledger state</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-7</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">reads latest ledger state</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-type"><value xml:lang="en">AccessRelationship</value></property>
+        <property propertyDefinitionRef="property-access"><value xml:lang="en">read</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="id-relationship-8" source="id-element-9-audit" target="id-element-7-ledger" xsi:type="Access" accessType="ReadWrite">
+      <name xml:lang="en">reads and writes audit snapshots</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-8</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">reads and writes audit snapshots</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-type"><value xml:lang="en">AccessRelationship</value></property>
+        <property propertyDefinitionRef="property-access"><value xml:lang="en">readWrite</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="id-relationship-9" source="id-element-3-apiService" target="id-element-1-operator" xsi:type="Serving">
+      <name xml:lang="en">serves operator workflow</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-9</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">serves operator workflow</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-type"><value xml:lang="en">ServingRelationship</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="id-relationship-10" source="id-element-10-compliance" target="id-element-11-regulation" xsi:type="Influence">
+      <name xml:lang="en">raises</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-10</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">raises</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-type"><value xml:lang="en">InfluenceRelationship</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="id-relationship-11" source="id-element-11-regulation" target="id-element-12-traceabilityGoal" xsi:type="Influence">
+      <name xml:lang="en">motivates</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-11</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">motivates</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-type"><value xml:lang="en">InfluenceRelationship</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="id-relationship-12" source="id-element-12-traceabilityGoal" target="id-element-13-auditRequirement" xsi:type="Realization">
+      <name xml:lang="en">is refined by</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-12</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">is refined by</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-type"><value xml:lang="en">RealizationRelationship</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="id-relationship-13" source="id-element-14-tradingCapability" target="id-element-5-gateway" xsi:type="Realization">
+      <name xml:lang="en">realized by</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-13</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">realized by</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-type"><value xml:lang="en">RealizationRelationship</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="id-relationship-14" source="id-element-15-techService" target="id-element-16-runtime" xsi:type="Serving">
+      <name xml:lang="en">is served by</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-14</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">is served by</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-type"><value xml:lang="en">ServingRelationship</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="id-relationship-15" source="id-element-16-runtime" target="id-element-17-gatewayArtifact" xsi:type="Assignment">
+      <name xml:lang="en">deploys</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-15</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">deploys</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-type"><value xml:lang="en">AssignmentRelationship</value></property>
+      </properties>
+    </relationship>
+    <relationship identifier="id-relationship-16" source="id-element-18-rack" target="id-element-16-runtime" xsi:type="Composition">
+      <name xml:lang="en">contains</name>
+      <properties>
+        <property propertyDefinitionRef="property-id"><value xml:lang="en">relationship-16</value></property>
+        <property propertyDefinitionRef="property-kind"><value xml:lang="en">Relationship</value></property>
+        <property propertyDefinitionRef="property-description"><value xml:lang="en">contains</value></property>
+        <property propertyDefinitionRef="property-source"><value xml:lang="en">/Users/serg/Docs/work/c4/c4c/tests/fixtures/m85-archimate-views-layout.dsl</value></property>
+        <property propertyDefinitionRef="property-type"><value xml:lang="en">CompositionRelationship</value></property>
+      </properties>
+    </relationship>
+  </relationships>
+  <propertyDefinitions>
+    <propertyDefinition identifier="property-id" type="string"><name xml:lang="en">c4c.id</name></propertyDefinition>
+    <propertyDefinition identifier="property-kind" type="string"><name xml:lang="en">c4c.kind</name></propertyDefinition>
+    <propertyDefinition identifier="property-parent" type="string"><name xml:lang="en">c4c.parent</name></propertyDefinition>
+    <propertyDefinition identifier="property-technology" type="string"><name xml:lang="en">c4c.technology</name></propertyDefinition>
+    <propertyDefinition identifier="property-tags" type="string"><name xml:lang="en">c4c.tags</name></propertyDefinition>
+    <propertyDefinition identifier="property-description" type="string"><name xml:lang="en">c4c.description</name></propertyDefinition>
+    <propertyDefinition identifier="property-source" type="string"><name xml:lang="en">c4c.source</name></propertyDefinition>
+    <propertyDefinition identifier="property-background" type="string"><name xml:lang="en">c4c.archimate.background</name></propertyDefinition>
+    <propertyDefinition identifier="property-color" type="string"><name xml:lang="en">c4c.archimate.color</name></propertyDefinition>
+    <propertyDefinition identifier="property-kind" type="string"><name xml:lang="en">c4c.archimate.kind</name></propertyDefinition>
+    <propertyDefinition identifier="property-type" type="string"><name xml:lang="en">c4c.archimate.type</name></propertyDefinition>
+    <propertyDefinition identifier="property-access" type="string"><name xml:lang="en">c4c.archimate.access</name></propertyDefinition>
+  </propertyDefinitions>
+</model>

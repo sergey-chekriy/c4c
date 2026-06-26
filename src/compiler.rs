@@ -1669,9 +1669,8 @@ fn validate_archimate_view(workspace: &Workspace, view: &View, diagnostics: &mut
         }
         for property in properties {
             match property.key.rsplit('.').next().unwrap_or("") {
-                "x" | "y" | "width" | "height" => {
-                    validate_integer(property, Some((0, i32::MAX)), diagnostics)
-                }
+                "x" | "y" => validate_integer(property, Some((0, i32::MAX)), diagnostics),
+                "width" | "height" => validate_integer(property, Some((1, i32::MAX)), diagnostics),
                 "background" | "color" | "stroke" => validate_hex_color(property, diagnostics),
                 "fontSize" => validate_integer(property, Some((0, i32::MAX)), diagnostics),
                 _ => {}

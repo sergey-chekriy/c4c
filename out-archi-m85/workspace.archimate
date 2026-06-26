@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<archimate:model xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:archimate="http://www.archimatetool.com/archimate" name="M85 ArchiMate Views Layout" id="id-c4c-model" version="5.0.0">
+  <folder name="Strategy" id="id-c4c-folder-strategy" type="strategy">
+    <element xsi:type="archimate:Capability" name="Digital asset trading" id="id-c4c-element-tradingCapability"/>
+  </folder>
+  <folder name="Business" id="id-c4c-folder-business" type="business">
+    <element xsi:type="archimate:BusinessActor" name="Operator" id="id-c4c-element-operator"/>
+    <element xsi:type="archimate:BusinessProcess" name="Client Onboarding" id="id-c4c-element-onboarding"/>
+  </folder>
+  <folder name="Application" id="id-c4c-folder-application" type="application">
+    <element xsi:type="archimate:ApplicationService" name="Trading API Service" id="id-c4c-element-apiService"/>
+    <element xsi:type="archimate:ApplicationComponent" name="Client Portal" id="id-c4c-element-portal"/>
+    <element xsi:type="archimate:ApplicationComponent" name="Internal API Gateway" id="id-c4c-element-gateway"/>
+    <element xsi:type="archimate:ApplicationFunction" name="Order Matcher" id="id-c4c-element-matcher"/>
+    <element xsi:type="archimate:DataObject" name="Ledger Entry" id="id-c4c-element-ledger"/>
+    <element xsi:type="archimate:ApplicationComponent" name="Audit Trail" id="id-c4c-element-audit"/>
+  </folder>
+  <folder name="Technology &amp; Physical" id="id-c4c-folder-technology" type="technology">
+    <element xsi:type="archimate:TechnologyService" name="Runtime Service" id="id-c4c-element-techService"/>
+    <element xsi:type="archimate:Node" name="Primary Runtime Node" id="id-c4c-element-runtime"/>
+    <element xsi:type="archimate:Artifact" name="Gateway Artifact" id="id-c4c-element-gatewayArtifact"/>
+    <element xsi:type="archimate:Equipment" name="Rack A" id="id-c4c-element-rack"/>
+  </folder>
+  <folder name="Motivation" id="id-c4c-folder-motivation" type="motivation">
+    <element xsi:type="archimate:Stakeholder" name="Compliance" id="id-c4c-element-compliance"/>
+    <element xsi:type="archimate:Driver" name="Regulatory pressure" id="id-c4c-element-regulation"/>
+    <element xsi:type="archimate:Goal" name="Traceable settlement" id="id-c4c-element-traceabilityGoal"/>
+    <element xsi:type="archimate:Requirement" name="Every order is auditable" id="id-c4c-element-auditRequirement"/>
+  </folder>
+  <folder name="Implementation &amp; Migration" id="id-c4c-folder-implementation_migration" type="implementation_migration">
+  </folder>
+  <folder name="Other" id="id-c4c-folder-other" type="other">
+    <element xsi:type="archimate:Junction" name="Accepted Order" id="id-c4c-element-accepted"/>
+  </folder>
+  <folder name="Relations" id="id-c4c-folder-relations" type="relations">
+    <element xsi:type="archimate:TriggeringRelationship" id="id-c4c-relationship-1" source="id-c4c-element-operator" target="id-c4c-element-onboarding" name="starts onboarding"/>
+    <element xsi:type="archimate:ServingRelationship" id="id-c4c-relationship-2" source="id-c4c-element-onboarding" target="id-c4c-element-apiService" name="requests account activation"/>
+    <element xsi:type="archimate:FlowRelationship" id="id-c4c-relationship-3" source="id-c4c-element-portal" target="id-c4c-element-gateway" name="Calls trading gateway over secure API with customer and order context"/>
+    <element xsi:type="archimate:FlowRelationship" id="id-c4c-relationship-4" source="id-c4c-element-gateway" target="id-c4c-element-accepted" name="validates order"/>
+    <element xsi:type="archimate:TriggeringRelationship" id="id-c4c-relationship-5" source="id-c4c-element-accepted" target="id-c4c-element-matcher" name="routes accepted order"/>
+    <element xsi:type="archimate:AccessRelationship" id="id-c4c-relationship-6" source="id-c4c-element-matcher" target="id-c4c-element-ledger" name="writes ledger entry"/>
+    <element xsi:type="archimate:AccessRelationship" id="id-c4c-relationship-7" source="id-c4c-element-gateway" target="id-c4c-element-ledger" name="reads latest ledger state"/>
+    <element xsi:type="archimate:AccessRelationship" id="id-c4c-relationship-8" source="id-c4c-element-audit" target="id-c4c-element-ledger" name="reads and writes audit snapshots"/>
+    <element xsi:type="archimate:ServingRelationship" id="id-c4c-relationship-9" source="id-c4c-element-apiService" target="id-c4c-element-operator" name="serves operator workflow"/>
+    <element xsi:type="archimate:InfluenceRelationship" id="id-c4c-relationship-10" source="id-c4c-element-compliance" target="id-c4c-element-regulation" name="raises"/>
+    <element xsi:type="archimate:InfluenceRelationship" id="id-c4c-relationship-11" source="id-c4c-element-regulation" target="id-c4c-element-traceabilityGoal" name="motivates"/>
+    <element xsi:type="archimate:RealizationRelationship" id="id-c4c-relationship-12" source="id-c4c-element-traceabilityGoal" target="id-c4c-element-auditRequirement" name="is refined by"/>
+    <element xsi:type="archimate:RealizationRelationship" id="id-c4c-relationship-13" source="id-c4c-element-tradingCapability" target="id-c4c-element-gateway" name="realized by"/>
+    <element xsi:type="archimate:ServingRelationship" id="id-c4c-relationship-14" source="id-c4c-element-techService" target="id-c4c-element-runtime" name="is served by"/>
+    <element xsi:type="archimate:AssignmentRelationship" id="id-c4c-relationship-15" source="id-c4c-element-runtime" target="id-c4c-element-gatewayArtifact" name="deploys"/>
+    <element xsi:type="archimate:CompositionRelationship" id="id-c4c-relationship-16" source="id-c4c-element-rack" target="id-c4c-element-runtime" name="contains"/>
+  </folder>
+  <folder name="Views" id="id-c4c-folder-diagrams" type="diagrams">
+    <element xsi:type="archimate:ArchimateDiagramModel" name="M85 application cooperation" id="id-c4c-view-m85-app" connectionRouterType="2">
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-app-operator" archimateElement="id-c4c-element-operator" type="1" fillColor="#ffffb5" targetConnections="id-c4c-connection-m85-app-9">
+        <bounds x="160" y="160" width="210" height="90"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-m85-app-1" source="id-c4c-viewobject-m85-app-operator" target="id-c4c-viewobject-m85-app-onboarding" archimateRelationship="id-c4c-relationship-1">
+        </sourceConnection>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-app-onboarding" archimateElement="id-c4c-element-onboarding" type="1" fillColor="#ffffb5" targetConnections="id-c4c-connection-m85-app-1">
+        <bounds x="580" y="330" width="210" height="90"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-m85-app-2" source="id-c4c-viewobject-m85-app-onboarding" target="id-c4c-viewobject-m85-app-apiService" archimateRelationship="id-c4c-relationship-2">
+        </sourceConnection>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-app-apiService" archimateElement="id-c4c-element-apiService" type="1" fillColor="#b5ffff" targetConnections="id-c4c-connection-m85-app-2">
+        <bounds x="580" y="160" width="210" height="90"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-m85-app-9" source="id-c4c-viewobject-m85-app-apiService" target="id-c4c-viewobject-m85-app-operator" archimateRelationship="id-c4c-relationship-9">
+        </sourceConnection>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-app-portal" archimateElement="id-c4c-element-portal" type="1" fillColor="#b5ffff">
+        <bounds x="1000" y="500" width="210" height="90"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-m85-app-3" source="id-c4c-viewobject-m85-app-portal" target="id-c4c-viewobject-m85-app-gateway" archimateRelationship="id-c4c-relationship-3" lineColor="#00aa00">
+        </sourceConnection>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-app-gateway" archimateElement="id-c4c-element-gateway" type="1" fillColor="#008e00" fontColor="#ffffff" targetConnections="id-c4c-connection-m85-app-3">
+        <bounds x="1000" y="320" width="220" height="90"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-m85-app-4" source="id-c4c-viewobject-m85-app-gateway" target="id-c4c-viewobject-m85-app-accepted" archimateRelationship="id-c4c-relationship-4">
+        </sourceConnection>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-m85-app-7" source="id-c4c-viewobject-m85-app-gateway" target="id-c4c-viewobject-m85-app-ledger" archimateRelationship="id-c4c-relationship-7">
+        </sourceConnection>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-app-matcher" archimateElement="id-c4c-element-matcher" type="1" fillColor="#b5ffff" targetConnections="id-c4c-connection-m85-app-5">
+        <bounds x="1420" y="330" width="210" height="90"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-m85-app-6" source="id-c4c-viewobject-m85-app-matcher" target="id-c4c-viewobject-m85-app-ledger" archimateRelationship="id-c4c-relationship-6">
+        </sourceConnection>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-app-ledger" archimateElement="id-c4c-element-ledger" type="1" fillColor="#b5ffff" targetConnections="id-c4c-connection-m85-app-6 id-c4c-connection-m85-app-7 id-c4c-connection-m85-app-8">
+        <bounds x="1840" y="160" width="210" height="90"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-app-accepted" archimateElement="id-c4c-element-accepted" type="1" fillColor="#eeeeee" targetConnections="id-c4c-connection-m85-app-4">
+        <bounds x="1420" y="160" width="210" height="90"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-m85-app-5" source="id-c4c-viewobject-m85-app-accepted" target="id-c4c-viewobject-m85-app-matcher" archimateRelationship="id-c4c-relationship-5">
+        </sourceConnection>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-app-audit" archimateElement="id-c4c-element-audit" type="1" fillColor="#b5ffff">
+        <bounds x="1000" y="160" width="210" height="90"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-m85-app-8" source="id-c4c-viewobject-m85-app-audit" target="id-c4c-viewobject-m85-app-ledger" archimateRelationship="id-c4c-relationship-8">
+          <bendpoint startX="0" startY="-85" endX="-840" endY="-85"/>
+          <bendpoint startX="840" startY="-85" endX="0" endY="-85"/>
+        </sourceConnection>
+      </child>
+    </element>
+    <element xsi:type="archimate:ArchimateDiagramModel" name="M85 motivation" id="id-c4c-view-m85-motivation" connectionRouterType="2">
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-motivation-gateway" archimateElement="id-c4c-element-gateway" type="1" fillColor="#008e00" fontColor="#ffffff" targetConnections="id-c4c-connection-m85-motivation-4">
+        <bounds x="160" y="1040" width="210" height="90"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-motivation-compliance" archimateElement="id-c4c-element-compliance" type="1" fillColor="#ccccff">
+        <bounds x="160" y="160" width="210" height="90"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-m85-motivation-1" source="id-c4c-viewobject-m85-motivation-compliance" target="id-c4c-viewobject-m85-motivation-regulation" archimateRelationship="id-c4c-relationship-10">
+        </sourceConnection>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-motivation-regulation" archimateElement="id-c4c-element-regulation" type="1" fillColor="#ccccff" targetConnections="id-c4c-connection-m85-motivation-1">
+        <bounds x="620" y="160" width="210" height="90"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-m85-motivation-2" source="id-c4c-viewobject-m85-motivation-regulation" target="id-c4c-viewobject-m85-motivation-traceabilityGoal" archimateRelationship="id-c4c-relationship-11">
+        </sourceConnection>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-motivation-traceabilityGoal" archimateElement="id-c4c-element-traceabilityGoal" type="1" fillColor="#ccccff" targetConnections="id-c4c-connection-m85-motivation-2">
+        <bounds x="160" y="380" width="210" height="90"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-m85-motivation-3" source="id-c4c-viewobject-m85-motivation-traceabilityGoal" target="id-c4c-viewobject-m85-motivation-auditRequirement" archimateRelationship="id-c4c-relationship-12">
+        </sourceConnection>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-motivation-auditRequirement" archimateElement="id-c4c-element-auditRequirement" type="1" fillColor="#ccccff" targetConnections="id-c4c-connection-m85-motivation-3">
+        <bounds x="160" y="600" width="210" height="90"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-motivation-tradingCapability" archimateElement="id-c4c-element-tradingCapability" type="1" fillColor="#f5deaa">
+        <bounds x="160" y="820" width="210" height="90"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-m85-motivation-4" source="id-c4c-viewobject-m85-motivation-tradingCapability" target="id-c4c-viewobject-m85-motivation-gateway" archimateRelationship="id-c4c-relationship-13">
+        </sourceConnection>
+      </child>
+    </element>
+    <element xsi:type="archimate:ArchimateDiagramModel" name="M85 technology" id="id-c4c-view-m85-technology" connectionRouterType="2">
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-technology-techService" archimateElement="id-c4c-element-techService" type="1" fillColor="#c9d9ff">
+        <bounds x="160" y="160" width="210" height="90"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-m85-technology-1" source="id-c4c-viewobject-m85-technology-techService" target="id-c4c-viewobject-m85-technology-runtime" archimateRelationship="id-c4c-relationship-14">
+        </sourceConnection>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-technology-runtime" archimateElement="id-c4c-element-runtime" type="1" fillColor="#c9d9ff" targetConnections="id-c4c-connection-m85-technology-1 id-c4c-connection-m85-technology-3">
+        <bounds x="160" y="380" width="220" height="90"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-m85-technology-2" source="id-c4c-viewobject-m85-technology-runtime" target="id-c4c-viewobject-m85-technology-gatewayArtifact" archimateRelationship="id-c4c-relationship-15">
+        </sourceConnection>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-technology-gatewayArtifact" archimateElement="id-c4c-element-gatewayArtifact" type="1" fillColor="#c9d9ff" targetConnections="id-c4c-connection-m85-technology-2">
+        <bounds x="160" y="600" width="210" height="90"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-m85-technology-rack" archimateElement="id-c4c-element-rack" type="1" fillColor="#c9d9ff">
+        <bounds x="160" y="820" width="210" height="90"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-m85-technology-3" source="id-c4c-viewobject-m85-technology-rack" target="id-c4c-viewobject-m85-technology-runtime" archimateRelationship="id-c4c-relationship-16">
+          <bendpoint startX="-145" startY="0" endX="-150" endY="440"/>
+          <bendpoint startX="-145" startY="-440" endX="-150" endY="0"/>
+        </sourceConnection>
+      </child>
+    </element>
+  </folder>
+</archimate:model>

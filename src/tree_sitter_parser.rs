@@ -153,6 +153,10 @@ mod tests {
             include_str!("../tests/fixtures/m84-invalid-archimate.dsl"),
         ),
         (
+            "tests/fixtures/m85-archimate-views-layout.dsl",
+            include_str!("../tests/fixtures/m85-archimate-views-layout.dsl"),
+        ),
+        (
             "tests/fixtures/m7-custom-importer.dsl",
             include_str!("../tests/fixtures/m7-custom-importer.dsl"),
         ),
