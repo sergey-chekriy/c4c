@@ -98,6 +98,33 @@ pub struct ArchiBounds {
     pub height: i64,
 }
 
+impl ArchiBounds {
+    fn zero() -> Self {
+        Self {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+        }
+    }
+
+    fn offset(self, offset: Self) -> Self {
+        Self {
+            x: self.x + offset.x,
+            y: self.y + offset.y,
+            ..self
+        }
+    }
+
+    fn translate(self, x: i64, y: i64) -> Self {
+        Self {
+            x: self.x + x,
+            y: self.y + y,
+            ..self
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ArchiConnection {
     pub id: String,
@@ -120,7 +147,12 @@ pub fn parse(input: &str) -> Result<ArchiNativeModel, String> {
 }
 
 pub fn import(input: &Path, output: &Path, sidecar: &Path) -> Result<(), String> {
-    let source_xml = read_utf8(input)?;
+    let (source_xml, removed_fill_colors) = sanitize_native_xml(&read_utf8(input)?)?;
+    if removed_fill_colors > 0 {
+        eprintln!(
+            "warning: dropped {removed_fill_colors} unsupported fillColor attribute(s) from non-visual Archi XML nodes"
+        );
+    }
     let model = parse(&source_xml)?;
     for diagnostic in validate_connections(&model) {
         eprintln!("warning: {diagnostic}");
@@ -151,11 +183,17 @@ pub fn sidecar_xml(sidecar: &Path, projection: &Path) -> Result<Option<String>, 
     if hash(&read_utf8(projection)?) != sidecar.projection_hash {
         return Ok(None);
     }
-    let model = parse(&sidecar.source_xml)?;
+    let (source_xml, removed_fill_colors) = sanitize_native_xml(&sidecar.source_xml)?;
+    if removed_fill_colors > 0 {
+        eprintln!(
+            "warning: dropped {removed_fill_colors} unsupported fillColor attribute(s) from non-visual Archi XML nodes"
+        );
+    }
+    let model = parse(&source_xml)?;
     if let Some(diagnostic) = validate_connections(&model).first() {
         return Err(format!("invalid Archi sidecar connection: {diagnostic}"));
     }
-    Ok(Some(sidecar.source_xml))
+    Ok(Some(source_xml))
 }
 
 pub fn diff_files(a: &Path, b: &Path) -> Result<(), String> {
@@ -458,20 +496,46 @@ pub fn project_to_dsl(model: &ArchiNativeModel) -> String {
             if let Some(viewpoint) = diagram.attributes.get("viewpoint") {
                 output.push_str(&format!("      viewpoint {viewpoint}\n"));
             }
+            let mut groups = Vec::new();
+            collect_diagram_groups(&diagram.children, ArchiBounds::zero(), &mut groups);
             let mut objects = Vec::new();
-            collect_diagram_objects(&diagram.children, &mut objects);
+            collect_diagram_objects(&diagram.children, ArchiBounds::zero(), &mut objects);
+            let (shift_x, shift_y) = projection_shift(&groups, &objects);
+            if !groups.is_empty() {
+                output.push_str("      properties {\n");
+                for group in groups {
+                    let bounds = group.bounds.translate(shift_x, shift_y);
+                    output.push_str(&format!(
+                        "        {} {}\n        {} {}\n        {} {}\n        {} {}\n",
+                        dsl_string(&format!("group.{}.x", group.name)),
+                        dsl_string(&bounds.x.to_string()),
+                        dsl_string(&format!("group.{}.y", group.name)),
+                        dsl_string(&bounds.y.to_string()),
+                        dsl_string(&format!("group.{}.width", group.name)),
+                        dsl_string(&bounds.width.to_string()),
+                        dsl_string(&format!("group.{}.height", group.name)),
+                        dsl_string(&bounds.height.to_string()),
+                    ));
+                    if let Some(color) = group.fill_color {
+                        output.push_str(&format!(
+                            "        {} {}\n",
+                            dsl_string(&format!("group.{}.background", group.name)),
+                            dsl_string(color)
+                        ));
+                    }
+                }
+                output.push_str("      }\n");
+            }
             for object in objects {
-                let Some(identifier) = identifiers.get(object.element.as_str()) else {
+                let Some(identifier) = identifiers.get(object.element) else {
                     continue;
                 };
-                let Some(bounds) = object.bounds else {
-                    continue;
-                };
+                let bounds = object.bounds.translate(shift_x, shift_y);
                 output.push_str(&format!(
                     "      object {identifier} {{\n        x {}\n        y {}\n        width {}\n        height {}\n",
                     bounds.x, bounds.y, bounds.width, bounds.height
                 ));
-                if let Some(color) = object.attributes.get("fillColor") {
+                if let Some(color) = object.fill_color {
                     output.push_str(&format!("        background {color}\n"));
                 }
                 output.push_str("      }\n");
@@ -506,19 +570,84 @@ fn append_projected_archimate_block(
     output.push_str(&format!("{spaces}}}\n"));
 }
 
-fn collect_diagram_objects<'a>(
+struct ProjectedGroup<'a> {
+    name: &'a str,
+    bounds: ArchiBounds,
+    fill_color: Option<&'a str>,
+}
+
+struct ProjectedObject<'a> {
+    element: &'a str,
+    bounds: ArchiBounds,
+    fill_color: Option<&'a str>,
+}
+
+fn collect_diagram_groups<'a>(
     children: &'a [ArchiDiagramChild],
-    objects: &mut Vec<&'a ArchiDiagramObject>,
+    offset: ArchiBounds,
+    groups: &mut Vec<ProjectedGroup<'a>>,
 ) {
     for child in children {
         match child {
             ArchiDiagramChild::Object(object) => {
-                objects.push(object);
-                collect_diagram_objects(&object.children, objects);
+                let next = object.bounds.map_or(offset, |bounds| bounds.offset(offset));
+                collect_diagram_groups(&object.children, next, groups);
             }
-            ArchiDiagramChild::Group(group) => collect_diagram_objects(&group.children, objects),
+            ArchiDiagramChild::Group(group) => {
+                let Some(bounds) = group.bounds.map(|bounds| bounds.offset(offset)) else {
+                    continue;
+                };
+                groups.push(ProjectedGroup {
+                    name: &group.name,
+                    bounds,
+                    fill_color: group.attributes.get("fillColor").map(String::as_str),
+                });
+                collect_diagram_groups(&group.children, bounds, groups);
+            }
         }
     }
+}
+
+fn collect_diagram_objects<'a>(
+    children: &'a [ArchiDiagramChild],
+    offset: ArchiBounds,
+    objects: &mut Vec<ProjectedObject<'a>>,
+) {
+    for child in children {
+        match child {
+            ArchiDiagramChild::Object(object) => {
+                let Some(bounds) = object.bounds.map(|bounds| bounds.offset(offset)) else {
+                    continue;
+                };
+                objects.push(ProjectedObject {
+                    element: &object.element,
+                    bounds,
+                    fill_color: object.attributes.get("fillColor").map(String::as_str),
+                });
+                collect_diagram_objects(&object.children, bounds, objects);
+            }
+            ArchiDiagramChild::Group(group) => {
+                let next = group.bounds.map_or(offset, |bounds| bounds.offset(offset));
+                collect_diagram_objects(&group.children, next, objects);
+            }
+        }
+    }
+}
+
+fn projection_shift(groups: &[ProjectedGroup<'_>], objects: &[ProjectedObject<'_>]) -> (i64, i64) {
+    let min_x = groups
+        .iter()
+        .map(|group| group.bounds.x)
+        .chain(objects.iter().map(|object| object.bounds.x))
+        .min()
+        .unwrap_or(0);
+    let min_y = groups
+        .iter()
+        .map(|group| group.bounds.y)
+        .chain(objects.iter().map(|object| object.bounds.y))
+        .min()
+        .unwrap_or(0);
+    (0.max(-min_x), 0.max(-min_y))
 }
 
 fn append_projected_element(
@@ -926,8 +1055,8 @@ fn compare_xml(a: &XmlElement, b: &XmlElement, path: &str) -> Option<String> {
     if a.name != b.name {
         return Some(format!("{path}: element differs: {} vs {}", a.name, b.name));
     }
-    let a_attributes = canonical_attributes(&a.attributes);
-    let b_attributes = canonical_attributes(&b.attributes);
+    let a_attributes = canonical_attributes(a);
+    let b_attributes = canonical_attributes(b);
     if a_attributes != b_attributes {
         for key in a_attributes.keys().chain(b_attributes.keys()) {
             if a_attributes.get(key) != b_attributes.get(key) {
@@ -961,9 +1090,11 @@ fn compare_xml(a: &XmlElement, b: &XmlElement, path: &str) -> Option<String> {
     None
 }
 
-fn canonical_attributes(attributes: &BTreeMap<String, String>) -> BTreeMap<String, String> {
-    attributes
+fn canonical_attributes(element: &XmlElement) -> BTreeMap<String, String> {
+    element
+        .attributes
         .iter()
+        .filter(|(name, _)| name.as_str() != "fillColor" || is_visual_fill_color_node(element))
         .map(|(name, value)| {
             let value = if name == "targetConnections" {
                 let mut values = value.split_whitespace().collect::<Vec<_>>();
@@ -975,6 +1106,66 @@ fn canonical_attributes(attributes: &BTreeMap<String, String>) -> BTreeMap<Strin
             (name.clone(), value)
         })
         .collect()
+}
+
+fn sanitize_native_xml(input: &str) -> Result<(String, usize), String> {
+    let mut root = parse_xml(input)?;
+    let removed = remove_unsupported_fill_color(&mut root);
+    if removed == 0 {
+        return Ok((input.to_string(), 0));
+    }
+    Ok((serialize_xml_document(&root), removed))
+}
+
+fn remove_unsupported_fill_color(element: &mut XmlElement) -> usize {
+    let mut removed = 0;
+    if !is_visual_fill_color_node(element) && element.attributes.remove("fillColor").is_some() {
+        removed += 1;
+    }
+    removed
+        + element
+            .children
+            .iter_mut()
+            .map(remove_unsupported_fill_color)
+            .sum::<usize>()
+}
+
+fn is_visual_fill_color_node(element: &XmlElement) -> bool {
+    element.name == "child" && matches!(native_type(element).as_str(), "DiagramObject" | "Group")
+}
+
+fn serialize_xml_document(root: &XmlElement) -> String {
+    let mut output = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n".to_string();
+    serialize_xml(root, 0, &mut output);
+    output
+}
+
+fn serialize_xml(element: &XmlElement, indent: usize, output: &mut String) {
+    let spaces = " ".repeat(indent);
+    output.push_str(&spaces);
+    output.push('<');
+    output.push_str(&element.name);
+    for (name, value) in &element.attributes {
+        output.push_str(&format!(" {name}=\"{}\"", xml_escape(value)));
+    }
+    if element.children.is_empty() && element.text.is_empty() {
+        output.push_str("/>\n");
+        return;
+    }
+    output.push('>');
+    if !element.text.is_empty() {
+        output.push_str(&xml_escape(&element.text));
+    }
+    if !element.children.is_empty() {
+        output.push('\n');
+        for child in &element.children {
+            serialize_xml(child, indent + 2, output);
+        }
+        output.push_str(&spaces);
+    }
+    output.push_str("</");
+    output.push_str(&element.name);
+    output.push_str(">\n");
 }
 
 fn collect_objects<'a>(
@@ -1057,12 +1248,97 @@ fn dsl_identifier(name: &str) -> String {
         }
     }
     if identifier.is_empty() {
-        return "element".into();
+        identifier.push_str("unnamed");
     }
     if identifier.starts_with(|character: char| character.is_ascii_digit()) {
-        identifier.insert_str(0, "element_");
+        identifier.insert_str(0, "n_");
+    }
+    if starts_with_dsl_keyword(&identifier) {
+        identifier.insert_str(0, "archi_");
     }
     identifier
+}
+
+fn starts_with_dsl_keyword(identifier: &str) -> bool {
+    const KEYWORDS: &[&str] = &[
+        "person",
+        "softwaresystem",
+        "container",
+        "component",
+        "element",
+        "deploymentenvironment",
+        "deploymentgroup",
+        "deploymentnode",
+        "infrastructurenode",
+        "softwaresysteminstance",
+        "containerinstance",
+        "resource",
+        "capability",
+        "valuestream",
+        "courseofaction",
+        "businessactor",
+        "businessrole",
+        "businesscollaboration",
+        "businessinterface",
+        "businessprocess",
+        "businessfunction",
+        "businessinteraction",
+        "businessevent",
+        "businessservice",
+        "businessobject",
+        "contract",
+        "representation",
+        "product",
+        "applicationcomponent",
+        "applicationcollaboration",
+        "applicationinterface",
+        "applicationfunction",
+        "applicationinteraction",
+        "applicationprocess",
+        "applicationevent",
+        "applicationservice",
+        "dataobject",
+        "node",
+        "device",
+        "systemsoftware",
+        "technologycollaboration",
+        "technologyinterface",
+        "path",
+        "communicationnetwork",
+        "technologyfunction",
+        "technologyprocess",
+        "technologyinteraction",
+        "technologyevent",
+        "technologyservice",
+        "artifact",
+        "equipment",
+        "facility",
+        "distributionnetwork",
+        "material",
+        "stakeholder",
+        "driver",
+        "assessment",
+        "goal",
+        "outcome",
+        "principle",
+        "requirement",
+        "constraint",
+        "meaning",
+        "value",
+        "workpackage",
+        "deliverable",
+        "implementationevent",
+        "plateau",
+        "gap",
+        "grouping",
+        "location",
+        "junction",
+        "andjunction",
+        "orjunction",
+    ];
+    KEYWORDS
+        .iter()
+        .any(|keyword| identifier.starts_with(keyword))
 }
 
 fn dsl_string(value: &str) -> String {
@@ -1074,6 +1350,14 @@ fn dsl_string(value: &str) -> String {
             .replace('\n', "\\n")
             .replace('\r', "\\r")
     )
+}
+
+fn xml_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn hash(value: &str) -> String {
@@ -1125,7 +1409,8 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    const MINI: &str = include_str!("../tests/fixtures/m8-archi-native-mini.archimate");
+    const MINI: &str = include_str!("../tests/fixtures/archi-native/m86-mini.archimate");
+    const MINI_DSL: &str = include_str!("../tests/fixtures/archi-native/m86-mini-expected.dsl");
 
     #[test]
     fn parses_native_model_and_preserves_diagram_metadata() {
@@ -1149,13 +1434,24 @@ mod tests {
             .iter()
             .flat_map(|folder| &folder.elements)
             .any(|element| element.native_type == "Node"));
+        assert!(model
+            .folders
+            .iter()
+            .flat_map(|folder| &folder.elements)
+            .all(|element| !element.attributes.contains_key("fillColor")));
         let relationships = model
             .folders
             .iter()
             .flat_map(|folder| &folder.relationships)
             .collect::<Vec<_>>();
-        assert_eq!(relationships.len(), 2);
+        assert_eq!(relationships.len(), 4);
         assert_eq!(relationships[0].native_type, "FlowRelationship");
+        assert_eq!(relationships[1].native_type, "AccessRelationship");
+        assert_eq!(
+            relationships[1].attributes.get("accessType").unwrap(),
+            "read"
+        );
+        assert_eq!(relationships[2].native_type, "AssignmentRelationship");
         let diagram = &model
             .folders
             .iter()
@@ -1176,6 +1472,14 @@ mod tests {
             panic!("expected app object");
         };
         assert_eq!(app.target_connections, ["connection-1"]);
+        assert_eq!(app.connections[0].target, "object-artifact");
+        let ArchiDiagramChild::Object(artifact) = &diagram.children[3] else {
+            panic!("expected artifact object");
+        };
+        assert_eq!(
+            artifact.target_connections,
+            ["connection-2", "connection-3"]
+        );
         assert!(validate_connections(&model).is_empty());
     }
 
@@ -1183,6 +1487,7 @@ mod tests {
     fn projects_valid_c4_dsl_and_round_trips_with_sidecar() {
         let model = parse(MINI).unwrap();
         let dsl = project_to_dsl(&model);
+        assert_eq!(dsl, MINI_DSL);
         let workspace = compiler::compile(&dsl).unwrap();
         compiler::validate(&workspace).unwrap();
         assert_eq!(workspace.views.len(), 1);
@@ -1190,8 +1495,12 @@ mod tests {
         assert!(dsl.contains("businessActor \"User <Admin>\""));
         assert!(dsl.contains("applicationComponent \"Orders\""));
         assert!(dsl.contains("node \"Primary Node\""));
+        assert!(dsl.contains("artifact \"Deployed Artifact\""));
         assert!(dsl.contains("archimateView context"));
         assert!(dsl.contains("user_admin -> orders \"Uses\""));
+        assert!(dsl.contains("orders -> deployed_artifact \"reads artifact\""));
+        assert!(dsl.contains("access read"));
+        assert!(dsl.contains("primary_node -> deployed_artifact \"deploys\""));
         assert!(dsl.contains("boundary -> orders {"));
         assert!(dsl.contains("type CompositionRelationship"));
         assert!(dsl.contains("exclude relationship.tag!=archi_view_context"));
@@ -1208,6 +1517,12 @@ mod tests {
         import(&input, &projection, &sidecar).unwrap();
         let output = sidecar_xml(&sidecar, &projection).unwrap().unwrap();
         assert!(canonical_diff(&parse_xml(MINI).unwrap(), &parse_xml(&output).unwrap()).is_none());
+        assert_fill_colors_are_visual_only(&output);
+        assert!(output.contains("lineColor=\"#003300\""));
+        assert!(output.contains("lineColor=\"#0000aa\""));
+        let sidecar_json = fs::read_to_string(&sidecar).unwrap();
+        assert!(sidecar_json.contains("\"format_version\": 1"));
+        assert!(sidecar_json.contains("\"source_xml\""));
         let export_directory = directory.join("out");
         exporters::export_with_archi_sidecar(
             &workspace,
@@ -1230,10 +1545,19 @@ mod tests {
         let generated =
             fs::read_to_string(generated_directory.join("workspace.archimate")).unwrap();
         semantic_diff_files(&input, &generated_directory.join("workspace.archimate")).unwrap();
+        let generated_xml = parse_xml(&generated).unwrap();
+        assert_eq!(count_native_type(&generated_xml, "DiagramObject"), 4);
+        assert_eq!(count_native_type(&generated_xml, "Connection"), 3);
+        assert_group_child_bounds_are_visible(&generated_xml, false);
         assert!(generated.contains("archimate:FlowRelationship"));
+        assert!(generated.contains("archimate:AccessRelationship"));
+        assert!(generated.contains("archimate:Artifact"));
         assert!(generated.contains("archimate:CompositionRelationship"));
+        assert!(!generated.contains("lineStyle="));
+        assert!(!generated.contains(" lineColor="));
+        assert_fill_colors_are_visual_only(&generated);
         assert_eq!(generated.matches("archimate:Group\"").count(), 1);
-        assert_eq!(generated.matches("archimate:Connection\"").count(), 1);
+        assert_eq!(generated.matches("archimate:Connection\"").count(), 3);
         assert!(!generated.contains("Imported Environment"));
         fs::write(
             &projection,
@@ -1260,12 +1584,72 @@ mod tests {
     }
 
     #[test]
+    fn drops_semantic_fill_color_from_imported_native_xml() {
+        let invalid = MINI.replace(
+            "name=\"Orders\" id=\"app-1\"/>",
+            "name=\"Orders\" id=\"app-1\" fillColor=\"#abcdef\"/>",
+        );
+        let (sanitized, removed) = sanitize_native_xml(&invalid).unwrap();
+        assert_eq!(removed, 1);
+        assert_fill_colors_are_visual_only(&sanitized);
+        assert!(canonical_diff(
+            &parse_xml(&invalid).unwrap(),
+            &parse_xml(&sanitized).unwrap()
+        )
+        .is_none());
+    }
+
+    #[test]
     fn reports_dangling_native_connections() {
         let invalid = MINI.replace("target=\"object-app\"", "target=\"missing\"");
         let diagnostics = validate_connections(&parse(&invalid).unwrap());
         assert!(diagnostics
             .iter()
             .any(|message| message.contains("missing target")));
+    }
+
+    #[test]
+    fn generated_identifiers_do_not_start_with_dsl_keywords() {
+        assert_eq!(dsl_identifier("node1"), "archi_node1");
+        assert_eq!(dsl_identifier("Path gateway"), "archi_path_gateway");
+        assert_eq!(dsl_identifier("Operator"), "operator");
+    }
+
+    fn assert_fill_colors_are_visual_only(xml: &str) {
+        for line in xml.lines().filter(|line| line.contains("fillColor=")) {
+            assert!(
+                line.contains("<child ")
+                    && (line.contains("xsi:type=\"archimate:DiagramObject\"")
+                        || line.contains("xsi:type=\"archimate:Group\"")),
+                "{line}"
+            );
+        }
+    }
+
+    fn count_native_type(element: &XmlElement, expected: &str) -> usize {
+        usize::from(native_type(element) == expected)
+            + element
+                .children
+                .iter()
+                .map(|child| count_native_type(child, expected))
+                .sum::<usize>()
+    }
+
+    fn assert_group_child_bounds_are_visible(element: &XmlElement, inside_group: bool) {
+        let element_type = native_type(element);
+        if inside_group && element_type == "DiagramObject" {
+            let bounds = element
+                .children
+                .iter()
+                .find(|child| child.name == "bounds")
+                .expect("diagram object has bounds");
+            assert!(number(bounds, "x").unwrap() >= 0);
+            assert!(number(bounds, "y").unwrap() >= 0);
+        }
+        let inside_group = inside_group || element_type == "Group";
+        for child in &element.children {
+            assert_group_child_bounds_are_visible(child, inside_group);
+        }
     }
 
     fn temporary_directory(label: &str) -> PathBuf {

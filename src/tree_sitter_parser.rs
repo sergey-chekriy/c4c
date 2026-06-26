@@ -157,6 +157,10 @@ mod tests {
             include_str!("../tests/fixtures/m85-archimate-views-layout.dsl"),
         ),
         (
+            "tests/fixtures/archi-native/m86-mini-expected.dsl",
+            include_str!("../tests/fixtures/archi-native/m86-mini-expected.dsl"),
+        ),
+        (
             "tests/fixtures/m7-custom-importer.dsl",
             include_str!("../tests/fixtures/m7-custom-importer.dsl"),
         ),

@@ -125,7 +125,7 @@ fn run_archi(args: &[String]) -> Result<(), String> {
         }
         [_, _, action, a, b] if action == "diff" => {
             archi_native::diff_files(Path::new(a), Path::new(b))?;
-            println!("OK: Archi native models are canonically equivalent");
+            println!("OK: Archi native models are visually/canonically equivalent");
         }
         [_, _, action, a, b, flag] if action == "diff" && flag == "--semantic" => {
             archi_native::semantic_diff_files(Path::new(a), Path::new(b))?;
@@ -153,7 +153,7 @@ fn run_archi(args: &[String]) -> Result<(), String> {
                 &dsl,
             )?;
             archi_native::diff_files(Path::new(input), &out.join("workspace.archimate"))?;
-            println!("OK: Archi native models are canonically equivalent");
+            println!("OK: Archi native models are visually/canonically equivalent");
         }
         _ => return usage(),
     }

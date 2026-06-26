@@ -879,6 +879,7 @@ fn append_archi_native_views(output: &mut String, workspace: &Workspace) {
             "    <element xsi:type=\"archimate:ArchimateDiagramModel\" name=\"{}\" id=\"id-c4c-view-{key}\" connectionRouterType=\"2\">\n",
             xml_attr(&archi_native_view_name(view))
         ));
+        let use_generated_bendpoints = !archi_native_has_manual_group_bounds(view);
         let object_xml = |identifier: &str,
                           bounds: ArchiNativeBounds,
                           indent: usize,
@@ -928,8 +929,9 @@ fn append_archi_native_views(output: &mut String, workspace: &Workspace) {
                     connection.relationship_id,
                     archi_native_connection_style(workspace, &connection.relationship_id)
                 ));
-                if let Some([first, second]) =
-                    archi_native_bendpoints(workspace, view, &layout, connection, route)
+                if let Some([first, second]) = use_generated_bendpoints
+                    .then(|| archi_native_bendpoints(workspace, view, &layout, connection, route))
+                    .flatten()
                 {
                     for (start_x, start_y, end_x, end_y) in [first, second] {
                         xml.push_str(&format!(
@@ -984,10 +986,18 @@ fn append_archi_native_views(output: &mut String, workspace: &Workspace) {
             let Some(bounds) = layout.groups.get(&group_index).copied() else {
                 continue;
             };
+            let group_fill = archi_native_view_group_property(
+                view,
+                &workspace.groups[group_index].name,
+                "background",
+            )
+            .map(|value| format!(" fillColor=\"{}\"", xml_attr(value)))
+            .unwrap_or_default();
             output.push_str(&format!(
-                "      <child xsi:type=\"archimate:Group\" id=\"id-c4c-viewgroup-{key}-{}\" name=\"{}\">\n        <bounds x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"/>\n",
+                "      <child xsi:type=\"archimate:Group\" id=\"id-c4c-viewgroup-{key}-{}\" name=\"{}\"{}>\n        <bounds x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"/>\n",
                 group_index + 1,
                 xml_attr(&workspace.groups[group_index].name),
+                group_fill,
                 bounds.x,
                 bounds.y,
                 bounds.width,
@@ -1491,6 +1501,69 @@ fn archi_native_padded(bounds: ArchiNativeBounds, padding: isize) -> ArchiNative
     }
 }
 
+fn archi_native_complete_manual_group_layout(
+    workspace: &Workspace,
+    view: &View,
+    graph: &compiler::ViewGraph,
+    visible_groups: &[usize],
+) -> Option<ArchiNativeLayout> {
+    let mut objects = HashMap::new();
+    for identifier in &graph.element_ids {
+        if !["x", "y", "width", "height"]
+            .iter()
+            .all(|name| archi_native_view_object_property(view, identifier, name).is_some())
+        {
+            return None;
+        }
+        objects.insert(
+            identifier.clone(),
+            archi_native_manual_bounds(
+                view,
+                identifier,
+                ArchiNativeBounds {
+                    x: 0,
+                    y: 0,
+                    width: 180,
+                    height: 80,
+                },
+            )?,
+        );
+    }
+    let mut groups = HashMap::new();
+    for group in visible_groups {
+        groups.insert(
+            *group,
+            archi_native_manual_group_bounds(view, &workspace.groups[*group].name)?,
+        );
+    }
+    Some(ArchiNativeLayout { objects, groups })
+}
+
+fn archi_native_manual_group_bounds(view: &View, name: &str) -> Option<ArchiNativeBounds> {
+    Some(ArchiNativeBounds {
+        x: archi_native_view_group_property(view, name, "x")?
+            .parse()
+            .ok()?,
+        y: archi_native_view_group_property(view, name, "y")?
+            .parse()
+            .ok()?,
+        width: archi_native_view_group_property(view, name, "width")?
+            .parse::<isize>()
+            .ok()?
+            .max(1),
+        height: archi_native_view_group_property(view, name, "height")?
+            .parse::<isize>()
+            .ok()?
+            .max(1),
+    })
+}
+
+fn archi_native_has_manual_group_bounds(view: &View) -> bool {
+    view.properties
+        .iter()
+        .any(|property| property.key.starts_with("group.") && property.key.ends_with(".x"))
+}
+
 fn archi_native_layout(
     workspace: &Workspace,
     view: &View,
@@ -1530,6 +1603,11 @@ fn archi_native_layout(
         return archi_native_viewpoint_layout(workspace, view, graph, connections);
     }
     if vertical && !visible_groups.is_empty() {
+        if let Some(layout) =
+            archi_native_complete_manual_group_layout(workspace, view, graph, &visible_groups)
+        {
+            return layout;
+        }
         let widest_group = visible_groups
             .iter()
             .map(|group| {
@@ -2083,6 +2161,15 @@ fn archi_native_view_object_property<'a>(
     name: &str,
 ) -> Option<&'a str> {
     let key = format!("object.{identifier}.{name}");
+    property_value(&view.properties, &key)
+}
+
+fn archi_native_view_group_property<'a>(
+    view: &'a View,
+    group_name: &str,
+    name: &str,
+) -> Option<&'a str> {
+    let key = format!("group.{group_name}.{name}");
     property_value(&view.properties, &key)
 }
 
@@ -3243,6 +3330,7 @@ mod tests {
         assert!(native.contains("User &lt;Admin&gt; &amp; Owner"));
         assert!(native.contains("name=\"Open orders\""));
         assert!(native.contains("name=\"Post entry\""));
+        assert_archi_fill_colors_only_on_visual_children(&native);
         let container_view = native
             .split("id=\"id-c4c-view-containers\"")
             .nth(1)
@@ -3322,6 +3410,7 @@ mod tests {
         assert!(native.contains("fillColor=\"#008e00\""));
         assert!(native.contains("<bounds x=\"300\" y=\"120\" width=\"180\" height=\"80\"/>"));
         assert!(!native.contains("lineStyle="));
+        assert_archi_fill_colors_only_on_visual_children(&native);
         assert_archi_connection_integrity(&native);
         let open_group = archimate(&workspace);
         assert!(open_group.contains("xsi:type=\"ApplicationComponent\""));
@@ -3359,6 +3448,7 @@ mod tests {
             assert!(native.contains(&format!("xsi:type=\"archimate:{value}\"")));
         }
         assert!(native.contains("id-c4c-relationship-rAssignment"));
+        assert_archi_fill_colors_only_on_visual_children(&native);
         assert_archi_connection_integrity(&native);
         let open_group = archimate(&workspace);
         assert!(open_group.contains("xsi:type=\"Access\" accessType=\"Read\""));
@@ -3383,6 +3473,7 @@ mod tests {
         assert_eq!(native, archi_native(&workspace));
         assert!(!native.contains("lineStyle="));
         assert!(!native.contains("name=\"\""));
+        assert_archi_fill_colors_only_on_visual_children(&native);
         for value in ["ArchimateDiagramModel", "DiagramObject", "Connection"] {
             assert!(native.contains(&format!("xsi:type=\"archimate:{value}\"")));
         }
@@ -3546,6 +3637,17 @@ mod tests {
                     "target {target} does not reference connection {id}"
                 );
             }
+        }
+    }
+
+    fn assert_archi_fill_colors_only_on_visual_children(native: &str) {
+        for line in native.lines().filter(|line| line.contains("fillColor=")) {
+            assert!(
+                line.contains("<child ")
+                    && (line.contains("xsi:type=\"archimate:DiagramObject\"")
+                        || line.contains("xsi:type=\"archimate:Group\"")),
+                "{line}"
+            );
         }
     }
 

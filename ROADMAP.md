@@ -79,7 +79,13 @@ Status: implemented as a practical validation/export layer, not official ArchiMa
 
 M8.5 improves generated native Archi diagrams with viewpoint-aware layout, fallback names, non-overlap placement, safer notation/style mapping, and clearer deterministic connection routing.
 
-Status: implemented for generated native Archi output. Full native Archi round-trip visual fidelity remains M8.6.
+Status: implemented for generated native Archi output. Full native Archi round-trip fidelity is covered by M8.6.
+
+## M8.6 — Archi native round-trip fidelity
+
+M8.6 imports native Archi `.archimate` files into explicit c4c ArchiMate DSL plus a JSON sidecar, exports unchanged projections back to native Archi XML, and provides canonical native diffing for round-trip checks.
+
+Status: implemented with safe native Archi XML parsing, extended DSL projection, lossless sidecar preservation for unchanged projections, sidecar-aware native export, canonical native diff, semantic diff, and local private-model workflow support. Full edited-projection sidecar merging remains deferred.
 
 ## M9 — compatibility suite
 
@@ -93,7 +99,7 @@ Local-only LSP for diagnostics, completion, hover, references, rename, semantic 
 
 Optional ArchiMate import and richer view/layout bridge while keeping ArchiMate semantics outside the C4 compiler core.
 
-Status: initial native bridge implemented with safe XML parsing, C4 projection, lossless sidecar
+Status: initial native bridge implemented with safe XML parsing, explicit ArchiMate DSL projection, lossless sidecar
 round-tripping for unchanged projections, canonical diffing, and connection integrity validation.
 Semantic merging of edited C4 projections into existing native diagrams remains deferred.
 

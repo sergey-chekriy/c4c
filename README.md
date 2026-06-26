@@ -258,16 +258,20 @@ connections are emitted only when both endpoint objects exist in the same view.
 
 ## Archi native round-trip
 
-Native import generates a C4-compatible projection plus a JSON sidecar. The sidecar stores the
+Native import generates explicit c4c ArchiMate DSL plus a JSON sidecar. The sidecar stores the
 complete original native XML, preserving folder/view order, IDs, groups, bounds, colors, fonts,
 connections, routing, and unknown native content. It is used only while the DSL file still matches
 the imported projection; a changed projection falls back to deterministic native generation with a
 warning instead of applying stale references.
 
 The projection uses readable name-derived identifiers. It preserves model hierarchy, native
-relationship types, view membership, and visual groups in ordinary DSL constructs and tags, so a
-sidecar-free export remains logically equivalent. Exact native identity, colors, bounds, routing,
-fonts, and unknown native content remain in the sidecar.
+relationship types, view membership, object bounds/colors, and visual groups in ordinary DSL
+constructs, view properties, and tags, so a sidecar-free export remains logically equivalent and
+readable. Exact native identity, fonts, routing, and unknown native content remain in the sidecar.
+
+Native style preservation is limited to known-safe visual attributes. Unsupported attributes such as
+semantic-element `fillColor` are not re-emitted; generated connection colors use Archi defaults
+unless an original sidecar value or explicit DSL color is present.
 
 ```bash
 cargo run -- archi import model.archimate \
@@ -276,6 +280,7 @@ cargo run -- export workspace.dsl --format archi --out out \
   --archi-sidecar workspace.archi-sidecar.json
 cargo run -- archi diff model.archimate out/workspace.archimate
 cargo run -- archi diff model.archimate out-without-sidecar/workspace.archimate --semantic
+cargo run -- archi roundtrip model.archimate --work-dir .work/archi-roundtrip
 ```
 
 ## c4c ArchiMate extensions
@@ -321,8 +326,8 @@ Use `--strict` for semantic-conformance errors without enabling any network or r
 ## ArchiMate layout and notation
 
 Native Archi export uses viewpoint-aware layout and safer notation mapping without unsupported
-Archi attributes such as `lineStyle`. It improves generated diagrams, but full native Archi
-round-trip visual fidelity is deferred to M8.6.
+Archi attributes such as `lineStyle`. Generated diagrams use deterministic layout, while imported
+native diagrams preserve visual structure through the sidecar when the projection is unchanged.
 
 `archi diff` ignores insignificant XML whitespace and attribute ordering, preserves meaningful
 child order and references, and treats `targetConnections` values as a set. The importer emits
