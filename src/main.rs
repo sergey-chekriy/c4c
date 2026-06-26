@@ -35,26 +35,31 @@ fn run() -> Result<(), String> {
     };
     let allow_network = args.iter().any(|arg| arg == "--allow-network");
     let strict_safe = args.iter().any(|arg| arg == "--strict-safe");
+    let strict = strict_safe || args.iter().any(|arg| arg == "--strict");
     if allow_network && strict_safe {
         return Err("--strict-safe conflicts with --allow-network".into());
     }
-    let ws = if allow_network || strict_safe {
+    let ws = if allow_network || strict_safe || strict {
         compiler::compile_file_with_options(
             input,
             compiler::CompileOptions {
                 allow_network,
                 strict_safe,
+                strict,
             },
         )?
     } else {
         compiler::compile_file(input)?
+    };
+    let validation = compiler::ValidationOptions {
+        strict_archimate: strict,
     };
     if let Some(warnings) = compiler::warnings(&ws) {
         eprintln!("{warnings}");
     }
     match cmd {
         "validate" => {
-            compiler::validate(&ws)?;
+            compiler::validate_with_options(&ws, validation)?;
             println!(
                 "OK: {} elements, {} relationships, {} views",
                 ws.elements.len(),
@@ -63,11 +68,11 @@ fn run() -> Result<(), String> {
             );
         }
         "inspect" => {
-            compiler::validate(&ws)?;
+            compiler::validate_with_options(&ws, validation)?;
             println!("{}", compiler::inspect(&ws));
         }
         "export" => {
-            compiler::validate(&ws)?;
+            compiler::validate_with_options(&ws, validation)?;
             let format = arg_value(&args, "--format").unwrap_or("mermaid");
             let out = arg_value(&args, "--out").unwrap_or("out");
             if let Some(sidecar) = arg_value(&args, "--archi-sidecar") {
@@ -89,11 +94,11 @@ fn run() -> Result<(), String> {
             }
         }
         "docs" => {
-            compiler::validate(&ws)?;
+            compiler::validate_with_options(&ws, validation)?;
             compiler::export_site(&ws, Path::new(arg_value(&args, "--out").unwrap_or("site")))?;
         }
         "adr-list" => {
-            compiler::validate(&ws)?;
+            compiler::validate_with_options(&ws, validation)?;
             print!("{}", compiler::adr_list(&ws));
         }
         _ => return usage(),
@@ -161,7 +166,7 @@ fn arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
 
 fn usage() -> Result<(), String> {
     Err(
-        "usage: c4c <validate|inspect> <workspace.dsl> [--strict-safe] [--allow-network]\n       c4c export <workspace.dsl> [--format json|mermaid|d2|plantuml|c4plantuml|dot|drawio|archimate|archi|archi-native|archimate-native|html|svg|png] [--out out] [--archi-sidecar file] [--strict-safe]\n       c4c archi import <input.archimate> --out <workspace.dsl> [--sidecar file]\n       c4c archi roundtrip <input.archimate> --work-dir <dir>\n       c4c archi diff <a.archimate> <b.archimate> [--semantic]\n       c4c docs <workspace.dsl> [--out site] [--strict-safe]\n       c4c adr list <workspace.dsl> [--strict-safe]"
+        "usage: c4c <validate|inspect> <workspace.dsl> [--strict] [--strict-safe] [--allow-network]\n       c4c export <workspace.dsl> [--format json|mermaid|d2|plantuml|c4plantuml|dot|drawio|archimate|archi|archi-native|archimate-native|html|svg|png] [--out out] [--archi-sidecar file] [--strict] [--strict-safe]\n       c4c archi import <input.archimate> --out <workspace.dsl> [--sidecar file]\n       c4c archi roundtrip <input.archimate> --work-dir <dir>\n       c4c archi diff <a.archimate> <b.archimate> [--semantic]\n       c4c docs <workspace.dsl> [--out site] [--strict] [--strict-safe]\n       c4c adr list <workspace.dsl> [--strict] [--strict-safe]"
             .into(),
     )
 }

@@ -428,6 +428,9 @@ pub fn project_to_dsl(model: &ArchiNativeModel) -> String {
             .map(|(_, _, tag)| tag.clone())
             .collect::<Vec<_>>();
         output.push_str(&format!(" {{\n      type {}\n", relationship.native_type));
+        if let Some(access) = relationship_access_direction(relationship) {
+            output.push_str(&format!("      access {access}\n"));
+        }
         if !tags.is_empty() {
             output.push_str(&format!("      tags {}\n", dsl_string(&tags.join(","))));
         }
@@ -452,6 +455,9 @@ pub fn project_to_dsl(model: &ArchiNativeModel) -> String {
                 included.join(" "),
                 dsl_string(&diagram.name)
             ));
+            if let Some(viewpoint) = diagram.attributes.get("viewpoint") {
+                output.push_str(&format!("      viewpoint {viewpoint}\n"));
+            }
             let mut objects = Vec::new();
             collect_diagram_objects(&diagram.children, &mut objects);
             for object in objects {
@@ -528,11 +534,41 @@ fn append_projected_element(
         .as_ref()
         .map(|description| format!(" {}", dsl_string(description)))
         .unwrap_or_default();
-    let keyword =
-        crate::compiler::archimate_element_keyword(&element.native_type).unwrap_or("grouping");
+    let keyword = projected_element_keyword(element);
     output.push_str(&format!(
         "{spaces}{identifier} = {keyword} {name}{description}\n"
     ));
+}
+
+fn projected_element_keyword(element: &ArchiElement) -> &'static str {
+    if element.native_type == "Junction" {
+        return match element
+            .attributes
+            .get("kind")
+            .or_else(|| element.attributes.get("type"))
+            .map(|value| value.to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("and") => "andJunction",
+            Some("or") => "orJunction",
+            _ => "junction",
+        };
+    }
+    crate::compiler::archimate_element_keyword(&element.native_type).unwrap_or("grouping")
+}
+
+fn relationship_access_direction(relationship: &ArchiRelationship) -> Option<&'static str> {
+    let value = relationship
+        .attributes
+        .get("accessType")
+        .or_else(|| relationship.attributes.get("access"))?;
+    match value.to_ascii_lowercase().as_str() {
+        "read" => Some("read"),
+        "write" => Some("write"),
+        "readwrite" | "read_write" | "read-write" => Some("readWrite"),
+        "access" => Some("access"),
+        _ => None,
+    }
 }
 
 fn projection_groups(model: &ArchiNativeModel) -> Vec<(String, Vec<String>)> {

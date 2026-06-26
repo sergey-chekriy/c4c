@@ -169,13 +169,17 @@ module.exports = grammar({
       kw($, 'grouping'),
       kw($, 'location'),
       kw($, 'junction'),
+      kw($, 'andJunction'),
+      kw($, 'orJunction'),
     ),
 
     _archimate_element_block: $ => seq(
       '{', $._newline,
-      repeat(choice($._newline, $.property_statement, $.archimate_element_format, $.property_block, $.perspectives_block, $.directive)),
+      repeat(choice($._newline, $.property_statement, $.archimate_element_format, $.junction_kind_statement, $.property_block, $.perspectives_block, $.directive)),
       '}', $._newline,
     ),
+
+    junction_kind_statement: $ => seq(kw($, 'kind'), choice(kw($, 'and'), kw($, 'or')), $._newline),
 
     archimate_element_format: $ => seq(
       choice(
@@ -192,6 +196,7 @@ module.exports = grammar({
     ),
 
     relationship: $ => seq(
+      optional(seq(field('id', $.identifier), '=')),
       field('source', $.identifier),
       field('operator', '->'),
       field('destination', $.identifier),
@@ -213,6 +218,7 @@ module.exports = grammar({
         $._newline,
         $.property_statement,
         $.relationship_type_statement,
+        $.relationship_access_statement,
         $.relationship_style_property,
         $.property_block,
         $.perspectives_block,
@@ -222,6 +228,7 @@ module.exports = grammar({
     ),
 
     relationship_type_statement: $ => seq(kw($, 'type'), $.value, $._newline),
+    relationship_access_statement: $ => seq(kw($, 'access'), $.value, $._newline),
 
     enterprise: $ => seq(kw($, 'enterprise'), $.value, $._model_block),
     group: $ => seq(kw($, 'group'), $.value, $._model_block),
@@ -410,7 +417,7 @@ module.exports = grammar({
 
     _archimate_view_block: $ => seq(
       '{', $._newline,
-      repeat(choice($._newline, $._common_view_statement, $.archimate_object)),
+      repeat(choice($._newline, $._common_view_statement, $.viewpoint_statement, $.archimate_object)),
       '}', $._newline,
     ),
 
@@ -424,6 +431,12 @@ module.exports = grammar({
       $.view_description_statement,
       $.property_block,
       $._preprocessor_directive,
+    ),
+
+    viewpoint_statement: $ => seq(
+      kw($, 'viewpoint'),
+      $.value,
+      $._newline,
     ),
 
     include_statement: $ => seq(kw($, 'include'), repeat1($._selector), $._newline),

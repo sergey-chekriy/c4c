@@ -67,7 +67,13 @@ is separate from the Open Group `archimate` exchange exporter.
 
 M8.3 covers the ArchiMate vocabulary listed in the ArchiMate 3.1 reference cards, plus basic formatting and Archi export/import mapping.
 
-Status: implemented with explicit ArchiMate element/relationship types, formatting metadata, `archimateView` support, and Archi-native/Open Group export mappings. Full formal ArchiMate conformance, including the relationship validity matrix, derivation rules, viewpoints, and advanced semantic validation, is deferred.
+Status: implemented with explicit ArchiMate element/relationship types, formatting metadata, `archimateView` support, and Archi-native/Open Group export mappings.
+
+## M8.4 — ArchiMate semantic conformance
+
+M8.4 adds practical semantic conformance for the explicit ArchiMate extension profile: central type registry metadata, element layer/category classification, relationship validation, junctions, AccessRelationship direction, viewpoint metadata, strict-mode errors, and improved native/Open Group export semantics.
+
+Status: implemented as a practical validation/export layer, not official ArchiMate certification or a complete formal relationship matrix.
 
 ## M9 — compatibility suite
 

@@ -877,6 +877,7 @@ mod tests {
             CompileOptions {
                 allow_network: false,
                 strict_safe: true,
+                strict: false,
             },
         )
         .unwrap_err();
@@ -887,6 +888,7 @@ mod tests {
             CompileOptions {
                 allow_network: false,
                 strict_safe: true,
+                strict: false,
             },
         )
         .unwrap();

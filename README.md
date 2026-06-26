@@ -33,6 +33,7 @@ Implemented in this repo:
 - Deterministic JSON, Mermaid, D2, PlantUML, C4-PlantUML, Graphviz DOT, Draw.io, ArchiMate, and HTML exporters.
 - Archi-native `.archimate` export with editable diagram views.
 - Explicit c4c ArchiMate extension profile with ArchiMate elements, relationship types, formatting metadata, `archimateView`, and manual object layout.
+- Practical ArchiMate semantic conformance with layer/role classification, relationship warnings, strict-mode errors, junctions, access direction, and viewpoint metadata.
 - Optional SVG/PNG generation through an explicitly requested local Graphviz renderer.
 
 
@@ -98,6 +99,14 @@ Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
 - Separate `archi` aliases preserve the standards-oriented Open Group `archimate` exporter.
 - Safe native import, canonical diff, C4 projection, and lossless sidecar round-tripping for unchanged projections.
 
+## Milestone 8.4 additions
+
+- Central ArchiMate type registry with element layer/category and structure-role metadata.
+- Default validation warnings for questionable ArchiMate semantics; `--strict` and `--strict-safe` make semantic issues fatal.
+- Explicit junction keywords, AccessRelationship direction, relationship identifiers, and `archimateView viewpoint` metadata.
+- Native Archi export keeps exact supported ArchiMate types and connection integrity without unsupported attributes such as `lineStyle`.
+- Open Group ArchiMate export preserves explicit relationship types and AccessRelationship direction where practical.
+
 ## Build
 
 ```bash
@@ -135,6 +144,7 @@ make check
 
 ```bash
 cargo run -- validate examples/internet-banking.dsl
+cargo run -- validate tests/fixtures/m84-archimate-conformance.dsl --strict
 cargo run -- inspect examples/internet-banking.dsl
 cargo run -- export examples/internet-banking.dsl --format mermaid --out out
 cargo run -- export examples/internet-banking.dsl --format json --out out-json
@@ -278,14 +288,27 @@ archimate {
   actor = businessActor "Operator"
   gateway = applicationComponent "Internal API Gateway"
   ledger = applicationComponent "External Ledger"
+  accepted = andJunction "Accepted order"
 
-  gateway -> ledger "Posts entries" {
+  postLedger = gateway -> ledger "Posts entries" {
     type FlowRelationship
   }
+  gateway -> ledger "Reads entries" {
+    type AccessRelationship
+    access read
+  }
+}
+
+archimateView "Application Cooperation" {
+  viewpoint applicationCooperation
+  include *
 }
 ```
 
 This is not standard Structurizr DSL. It is a c4c extension profile intended for ArchiMate modeling and Archi round-trip workflows.
+Default validation warns about questionable ArchiMate relationships and viewpoint mismatches.
+Use `--strict` for semantic-conformance errors without enabling any network or renderer behavior;
+`--strict-safe` keeps the existing safety checks and also enables strict semantic validation.
 
 `archi diff` ignores insignificant XML whitespace and attribute ordering, preserves meaningful
 child order and references, and treats `targetConnections` values as a set. The importer emits

@@ -113,6 +113,10 @@
           "named": true
         },
         {
+          "type": "junction_kind_statement",
+          "named": true
+        },
+        {
           "type": "perspectives_block",
           "named": true
         },
@@ -265,6 +269,10 @@
         },
         {
           "type": "view_title_statement",
+          "named": true
+        },
+        {
+          "type": "viewpoint_statement",
           "named": true
         }
       ]
@@ -1497,6 +1505,21 @@
     }
   },
   {
+    "type": "junction_kind_statement",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "keyword",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "light_styles",
     "named": true,
     "fields": {},
@@ -1688,6 +1711,16 @@
           }
         ]
       },
+      "id": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
       "operator": {
         "multiple": false,
         "required": true,
@@ -1730,11 +1763,34 @@
           "named": true
         },
         {
+          "type": "relationship_access_statement",
+          "named": true
+        },
+        {
           "type": "relationship_style_property",
           "named": true
         },
         {
           "type": "relationship_type_statement",
+          "named": true
+        },
+        {
+          "type": "value",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "relationship_access_statement",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "keyword",
           "named": true
         },
         {
@@ -2171,6 +2227,25 @@
   },
   {
     "type": "view_title_statement",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "value",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "viewpoint_statement",
     "named": true,
     "fields": {},
     "children": {

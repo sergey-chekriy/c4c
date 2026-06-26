@@ -313,8 +313,11 @@ impl Parser {
             } else {
                 None
             };
+            let junction_kind = self.current_archimate_junction_kind();
             if let Some(kind) = self.current_archimate_element_kind() {
+                let before = self.workspace.elements.len();
                 self.parse_element(statement_start, assigned, kind);
+                self.add_implicit_junction_kind(before, statement_start, junction_kind);
             } else if assigned.is_some() {
                 self.error(
                     self.current().span,
@@ -417,6 +420,31 @@ impl Parser {
             crate::compiler::archimate_element_kind(value)
         } else {
             None
+        }
+    }
+
+    fn current_archimate_junction_kind(&self) -> Option<&'static str> {
+        if self.at_keyword("andJunction") {
+            Some("and")
+        } else if self.at_keyword("orJunction") {
+            Some("or")
+        } else {
+            None
+        }
+    }
+
+    fn add_implicit_junction_kind(
+        &mut self,
+        before: usize,
+        span: Span,
+        junction_kind: Option<&'static str>,
+    ) {
+        if let Some(value) = junction_kind.filter(|_| self.workspace.elements.len() > before) {
+            self.workspace.elements[before].attributes.push(Property {
+                key: "kind".into(),
+                value: value.into(),
+                span,
+            });
         }
     }
 
@@ -606,6 +634,7 @@ impl Parser {
             "fontSize",
             "width",
             "height",
+            "kind",
         ]
         .into_iter()
         .find(|name| self.at_keyword(name))
@@ -637,6 +666,13 @@ impl Parser {
     }
 
     fn parse_relationship(&mut self) {
+        let (id, id_span) = if self.identifier_ahead() && self.nth_at(1, TokenTag::Equals) {
+            let (identifier, span) = self.take_identifier().unwrap();
+            self.advance();
+            (Some(identifier), Some(span))
+        } else {
+            (None, None)
+        };
         let (source, source_span) = self.take_identifier().unwrap();
         self.advance();
         let Some((destination, destination_span)) = self.take_identifier() else {
@@ -661,6 +697,7 @@ impl Parser {
         let index = self.workspace.relationships.len();
         let order = self.next_order();
         self.workspace.relationships.push(Relationship {
+            id,
             source,
             destination,
             description: optional_argument(arguments.first()),
@@ -673,7 +710,8 @@ impl Parser {
             properties: Vec::new(),
             perspectives: Vec::new(),
             order,
-            span: source_span.merge(end),
+            span: id_span.unwrap_or(source_span).merge(end),
+            id_span,
             source_span,
             destination_span,
         });
@@ -685,7 +723,8 @@ impl Parser {
                 self.skip_newlines();
                 if self.at(TokenTag::RightBrace) {
                     if let Some(end) = self.close_block("relationship") {
-                        self.workspace.relationships[index].span = source_span.merge(end.span);
+                        self.workspace.relationships[index].span =
+                            id_span.unwrap_or(source_span).merge(end.span);
                     }
                     break;
                 }
@@ -757,6 +796,12 @@ impl Parser {
                 {
                     property.value = native_type.into();
                 }
+                self.workspace.relationships[index]
+                    .attributes
+                    .push(property);
+            }
+        } else if self.at_keyword("access") {
+            if let Some(property) = self.parse_single_property("access") {
                 self.workspace.relationships[index]
                     .attributes
                     .push(property);
@@ -1613,6 +1658,10 @@ impl Parser {
                 self.error(self.current().span, "view description is missing", None);
             }
             self.finish_statement("description");
+        } else if view.kind == ViewKind::ArchiMate && self.at_keyword("viewpoint") {
+            if let Some(property) = self.parse_single_property("viewpoint") {
+                view.properties.push(property);
+            }
         } else if self.at_keyword("properties") {
             view.properties
                 .extend(self.parse_property_block("properties"));
@@ -2091,7 +2140,11 @@ impl Parser {
     }
 
     fn relationship_ahead(&self, arrow: TokenTag) -> bool {
-        self.identifier_ahead() && self.nth_at(1, arrow)
+        (self.identifier_ahead() && self.nth_at(1, arrow))
+            || (self.identifier_ahead()
+                && self.nth_at(1, TokenTag::Equals)
+                && self.nth_at(2, TokenTag::Identifier)
+                && self.nth_at(3, arrow))
     }
 
     fn identifier_ahead(&self) -> bool {

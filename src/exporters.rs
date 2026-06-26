@@ -501,6 +501,7 @@ fn archimate(workspace: &Workspace) -> String {
             "fontSize",
             "width",
             "height",
+            "kind",
         ] {
             properties.push((key, property_value(&element.attributes, key)));
         }
@@ -515,12 +516,20 @@ fn archimate(workspace: &Workspace) -> String {
         let Some(destination_index) = element_index(workspace, &relationship.destination) else {
             continue;
         };
+        let relationship_id = archimate_relationship_id(index, relationship);
+        let access_type = (open_group_relationship_type(relationship) == "Access")
+            .then(|| compiler::relationship_access_direction(relationship))
+            .flatten()
+            .map(open_group_access_type);
         output.push_str(&format!(
-            "    <relationship identifier=\"id-relationship-{}\" source=\"{}\" target=\"{}\" xsi:type=\"{}\">\n",
-            index + 1,
+            "    <relationship identifier=\"{}\" source=\"{}\" target=\"{}\" xsi:type=\"{}\"{}>\n",
+            relationship_id,
             archimate_element_id(source_index, &workspace.elements[source_index]),
             archimate_element_id(destination_index, &workspace.elements[destination_index]),
-            open_group_relationship_type(relationship)
+            open_group_relationship_type(relationship),
+            access_type
+                .map(|value| format!(" accessType=\"{}\"", xml_attr(value)))
+                .unwrap_or_default()
         ));
         if let Some(description) = &relationship.description {
             output.push_str(&format!(
@@ -529,8 +538,12 @@ fn archimate(workspace: &Workspace) -> String {
             ));
         }
         let (source_file, _) = workspace.source_map.resolve(relationship.span);
+        let relationship_property_id = relationship
+            .id
+            .clone()
+            .unwrap_or_else(|| format!("relationship-{}", index + 1));
         let properties = [
-            ("id", Some(format!("relationship-{}", index + 1))),
+            ("id", Some(relationship_property_id)),
             ("kind", Some("Relationship".into())),
             ("parent", None),
             ("technology", relationship.technology.clone()),
@@ -549,6 +562,10 @@ fn archimate(workspace: &Workspace) -> String {
             (
                 "type",
                 compiler::relationship_archimate_type(relationship).map(str::to_string),
+            ),
+            (
+                "access",
+                compiler::relationship_access_direction(relationship).map(str::to_string),
             ),
             (
                 "color",
@@ -602,6 +619,8 @@ fn archimate_extra_property_definitions(
                     "height" => "c4c.archimate.height",
                     "thickness" => "c4c.archimate.thickness",
                     "style" => "c4c.archimate.style",
+                    "access" => "c4c.archimate.access",
+                    "kind" => "c4c.archimate.kind",
                     _ => "c4c.archimate",
                 },
             ));
@@ -615,6 +634,7 @@ fn archimate_extra_property_definitions(
             "fontSize",
             "width",
             "height",
+            "kind",
         ] {
             add(key, property_value(&element.attributes, key).is_some());
         }
@@ -624,7 +644,7 @@ fn archimate_extra_property_definitions(
             "type",
             compiler::relationship_archimate_type(relationship).is_some(),
         );
-        for key in ["color", "thickness", "style"] {
+        for key in ["access", "color", "thickness", "style"] {
             add(key, property_value(&relationship.attributes, key).is_some());
         }
     }
@@ -662,10 +682,26 @@ fn archimate_element_id(index: usize, element: &Element) -> String {
     format!("id-element-{}-{}", index + 1, xml_identifier(&element.id))
 }
 
+fn archimate_relationship_id(index: usize, relationship: &Relationship) -> String {
+    relationship.id.as_ref().map_or_else(
+        || format!("id-relationship-{}", index + 1),
+        |id| format!("id-relationship-{}", xml_identifier(id)),
+    )
+}
+
 fn open_group_relationship_type(relationship: &Relationship) -> &str {
     compiler::relationship_archimate_type(relationship)
-        .map(|kind| kind.trim_end_matches("Relationship"))
+        .and_then(compiler::archimate_relationship_open_group_type)
         .unwrap_or("Association")
+}
+
+fn open_group_access_type(value: &str) -> &'static str {
+    match value.to_ascii_lowercase().as_str() {
+        "read" => "Read",
+        "write" => "Write",
+        "readwrite" => "ReadWrite",
+        _ => "Access",
+    }
 }
 
 fn archimate_type(kind: &ElementKind) -> &'static str {
@@ -742,7 +778,7 @@ fn append_archi_native_relationships(output: &mut String, workspace: &Workspace)
     for (index, relationship) in workspace.relationships.iter().enumerate() {
         append_archi_native_relationship(
             output,
-            &archi_native_relationship_id(index),
+            &archi_native_relationship_id(index, relationship),
             &relationship.source,
             &relationship.destination,
             relationship.description.as_deref(),
@@ -1028,7 +1064,12 @@ fn archi_native_view_relationship_id(
                 true,
             )
         },
-        |index| (archi_native_relationship_id(index), false),
+        |index| {
+            (
+                archi_native_relationship_id(index, &workspace.relationships[index]),
+                false,
+            )
+        },
     )
 }
 
@@ -1832,7 +1873,9 @@ fn archi_native_connection_style(workspace: &Workspace, relationship_id: &str) -
         .relationships
         .iter()
         .enumerate()
-        .find(|(index, _)| archi_native_relationship_id(*index) == relationship_id)
+        .find(|(index, relationship)| {
+            archi_native_relationship_id(*index, relationship) == relationship_id
+        })
         .map(|(_, relationship)| relationship)
     else {
         return String::new();
@@ -2089,8 +2132,11 @@ fn archi_native_element_id(identifier: &str) -> String {
     format!("id-c4c-element-{}", safe_name(identifier))
 }
 
-fn archi_native_relationship_id(index: usize) -> String {
-    format!("id-c4c-relationship-{}", index + 1)
+fn archi_native_relationship_id(index: usize, relationship: &Relationship) -> String {
+    relationship.id.as_ref().map_or_else(
+        || format!("id-c4c-relationship-{}", index + 1),
+        |id| format!("id-c4c-relationship-{}", safe_name(id)),
+    )
 }
 
 fn archi_native_object_id(view_key: &str, identifier: &str) -> String {
@@ -2140,14 +2186,9 @@ fn archi_native_fill(kind: &ElementKind) -> &'static str {
         ElementKind::Generic
         | ElementKind::DeploymentEnvironment
         | ElementKind::DeploymentGroup => "#eeeeee",
-        ElementKind::ArchiMate(kind) => match compiler::archimate_element_folder(kind) {
-            Some("business") => "#ffffb5",
-            Some("technology") => "#c9d9ff",
-            Some("motivation") => "#ccccff",
-            Some("strategy") => "#f5deaa",
-            Some("implementation_migration") => "#ffe0e0",
-            _ => "#b5ffff",
-        },
+        ElementKind::ArchiMate(kind) => {
+            compiler::archimate_element_default_color(kind).unwrap_or("#b5ffff")
+        }
         _ => "#b5ffff",
     }
 }
@@ -2896,6 +2937,7 @@ mod tests {
             CompileOptions {
                 allow_network: false,
                 strict_safe: true,
+                strict: false,
             },
         )
         .unwrap();
@@ -3005,6 +3047,7 @@ mod tests {
             CompileOptions {
                 allow_network: false,
                 strict_safe: true,
+                strict: false,
             },
         )
         .unwrap();
@@ -3039,6 +3082,42 @@ mod tests {
         )
         .unwrap();
         assert!(output.join("workspace.archimate").is_file());
+        fs::remove_dir_all(output).unwrap();
+    }
+
+    #[test]
+    fn exports_m84_archimate_semantics_without_native_warnings() {
+        let workspace = compile_file("tests/fixtures/m84-archimate-conformance.dsl").unwrap();
+        validate(&workspace).unwrap();
+        let native = archi_native(&workspace);
+        assert!(!native.contains("lineStyle="));
+        for value in [
+            "BusinessActor",
+            "ApplicationComponent",
+            "Node",
+            "Junction",
+            "FlowRelationship",
+            "AccessRelationship",
+            "ArchimateDiagramModel",
+            "DiagramObject",
+            "Connection",
+        ] {
+            assert!(native.contains(&format!("xsi:type=\"archimate:{value}\"")));
+        }
+        assert!(native.contains("id-c4c-relationship-rAssignment"));
+        assert_archi_connection_integrity(&native);
+        let open_group = archimate(&workspace);
+        assert!(open_group.contains("xsi:type=\"Access\" accessType=\"Read\""));
+        assert!(open_group.contains("xsi:type=\"Flow\""));
+        assert!(open_group.contains("c4c.archimate.access"));
+        let output = temporary_directory("m84-archi");
+        export(
+            &workspace,
+            "archi",
+            &output,
+            ExportOptions { strict_safe: true },
+        )
+        .unwrap();
         fs::remove_dir_all(output).unwrap();
     }
 

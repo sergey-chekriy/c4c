@@ -145,6 +145,14 @@ mod tests {
             include_str!("../tests/fixtures/m83-archimate-profile.dsl"),
         ),
         (
+            "tests/fixtures/m84-archimate-conformance.dsl",
+            include_str!("../tests/fixtures/m84-archimate-conformance.dsl"),
+        ),
+        (
+            "tests/fixtures/m84-invalid-archimate.dsl",
+            include_str!("../tests/fixtures/m84-invalid-archimate.dsl"),
+        ),
+        (
             "tests/fixtures/m7-custom-importer.dsl",
             include_str!("../tests/fixtures/m7-custom-importer.dsl"),
         ),
