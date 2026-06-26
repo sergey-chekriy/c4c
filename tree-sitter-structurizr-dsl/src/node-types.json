@@ -53,6 +53,224 @@
     }
   },
   {
+    "type": "archimate_block",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "archimate_element_declaration",
+          "named": true
+        },
+        {
+          "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "relationship",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "archimate_element_declaration",
+    "named": true,
+    "fields": {
+      "id": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      },
+      "kind": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "keyword",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "archimate_element_format",
+          "named": true
+        },
+        {
+          "type": "directive",
+          "named": true
+        },
+        {
+          "type": "perspectives_block",
+          "named": true
+        },
+        {
+          "type": "property_block",
+          "named": true
+        },
+        {
+          "type": "property_statement",
+          "named": true
+        },
+        {
+          "type": "value",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "archimate_element_format",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "color",
+          "named": true
+        },
+        {
+          "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "value",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "archimate_object",
+    "named": true,
+    "fields": {
+      "element": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
+    },
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "archimate_object_property",
+          "named": true
+        },
+        {
+          "type": "keyword",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "archimate_object_property",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "color",
+          "named": true
+        },
+        {
+          "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "value",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "archimate_view",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "animation",
+          "named": true
+        },
+        {
+          "type": "archimate_object",
+          "named": true
+        },
+        {
+          "type": "auto_layout_statement",
+          "named": true
+        },
+        {
+          "type": "constant_directive",
+          "named": true
+        },
+        {
+          "type": "default_statement",
+          "named": true
+        },
+        {
+          "type": "exclude_statement",
+          "named": true
+        },
+        {
+          "type": "include_directive",
+          "named": true
+        },
+        {
+          "type": "include_statement",
+          "named": true
+        },
+        {
+          "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "property_block",
+          "named": true
+        },
+        {
+          "type": "value",
+          "named": true
+        },
+        {
+          "type": "view_description_statement",
+          "named": true
+        },
+        {
+          "type": "view_title_statement",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "auto_layout_statement",
     "named": true,
     "fields": {},
@@ -707,6 +925,10 @@
           "named": true
         },
         {
+          "type": "archimate_block",
+          "named": true
+        },
+        {
           "type": "constant_directive",
           "named": true
         },
@@ -825,6 +1047,10 @@
       "types": [
         {
           "type": "archetypes_block",
+          "named": true
+        },
+        {
+          "type": "archimate_block",
           "named": true
         },
         {
@@ -1028,6 +1254,10 @@
       "types": [
         {
           "type": "archetypes_block",
+          "named": true
+        },
+        {
+          "type": "archimate_block",
           "named": true
         },
         {
@@ -1310,6 +1540,10 @@
           "named": true
         },
         {
+          "type": "archimate_block",
+          "named": true
+        },
+        {
           "type": "constant_directive",
           "named": true
         },
@@ -1496,6 +1730,14 @@
           "named": true
         },
         {
+          "type": "relationship_style_property",
+          "named": true
+        },
+        {
+          "type": "relationship_type_statement",
+          "named": true
+        },
+        {
           "type": "value",
           "named": true
         }
@@ -1541,6 +1783,25 @@
           "type": "color",
           "named": true
         },
+        {
+          "type": "keyword",
+          "named": true
+        },
+        {
+          "type": "value",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "relationship_type_statement",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
         {
           "type": "keyword",
           "named": true
@@ -1935,6 +2196,10 @@
       "multiple": true,
       "required": true,
       "types": [
+        {
+          "type": "archimate_view",
+          "named": true
+        },
         {
           "type": "branding_block",
           "named": true

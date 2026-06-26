@@ -523,6 +523,7 @@ fn element_kind(kind: &ElementKind) -> &'static str {
         | ElementKind::InfrastructureNode
         | ElementKind::SoftwareSystemInstance
         | ElementKind::ContainerInstance => "deployment",
+        ElementKind::ArchiMate(_) => "archimate",
         ElementKind::SoftwareSystem => "software system",
         ElementKind::Container => "container",
     }

@@ -391,34 +391,20 @@ pub fn project_to_dsl(model: &ArchiNativeModel) -> String {
         output.push_str(&format!(" {}", dsl_string(purpose)));
     }
     output.push_str(" {\n  model {\n");
-    for element in elements
+    let ungrouped = elements
         .iter()
-        .filter(|element| element.native_type != "Node" && !grouped.contains(&element.id))
-    {
-        append_projected_element(&mut output, element, &identifiers[element.id.as_str()], 4);
-    }
+        .filter(|element| !grouped.contains(&element.id))
+        .copied()
+        .collect::<Vec<_>>();
+    append_projected_archimate_block(&mut output, &ungrouped, &identifiers, 4);
     for (name, members) in &groups {
         output.push_str(&format!("    group {} {{\n", dsl_string(name)));
-        for element in elements
+        let group_elements = elements
             .iter()
-            .filter(|element| element.native_type != "Node" && members.contains(&element.id))
-        {
-            append_projected_element(&mut output, element, &identifiers[element.id.as_str()], 6);
-        }
-        output.push_str("    }\n");
-    }
-    let nodes = elements
-        .iter()
-        .filter(|element| element.native_type == "Node")
-        .collect::<Vec<_>>();
-    if !nodes.is_empty() {
-        output.push_str(
-            "    imported_environment = deploymentEnvironment \"Imported Environment\" {\n",
-        );
-        output.push_str("      tag c4c_archi_synthetic\n");
-        for element in nodes {
-            append_projected_element(&mut output, element, &identifiers[element.id.as_str()], 6);
-        }
+            .filter(|element| members.contains(&element.id))
+            .copied()
+            .collect::<Vec<_>>();
+        append_projected_archimate_block(&mut output, &group_elements, &identifiers, 6);
         output.push_str("    }\n");
     }
     for relationship in model
@@ -436,17 +422,16 @@ pub fn project_to_dsl(model: &ArchiNativeModel) -> String {
         if !relationship.name.is_empty() {
             output.push_str(&format!(" {}", dsl_string(&relationship.name)));
         }
-        let mut tags = vec![format!("archimate:{}", relationship.native_type)];
-        tags.extend(
-            diagrams
-                .iter()
-                .filter(|(diagram, _, _)| diagram_has_relationship(diagram, &relationship.id))
-                .map(|(_, _, tag)| tag.clone()),
-        );
-        output.push_str(&format!(
-            " {{\n      tags {}\n    }}\n",
-            dsl_string(&tags.join(","))
-        ));
+        let tags = diagrams
+            .iter()
+            .filter(|(diagram, _, _)| diagram_has_relationship(diagram, &relationship.id))
+            .map(|(_, _, tag)| tag.clone())
+            .collect::<Vec<_>>();
+        output.push_str(&format!(" {{\n      type {}\n", relationship.native_type));
+        if !tags.is_empty() {
+            output.push_str(&format!("      tags {}\n", dsl_string(&tags.join(","))));
+        }
+        output.push_str("    }\n");
     }
     output.push_str("  }\n");
     if !diagrams.is_empty() {
@@ -463,15 +448,71 @@ pub fn project_to_dsl(model: &ArchiNativeModel) -> String {
                 continue;
             }
             output.push_str(&format!(
-                "    systemLandscape {key} {{\n      include {}\n      exclude relationship.tag!={tag}\n      autolayout tb\n      title {}\n    }}\n",
+                "    archimateView {key} {{\n      include {}\n      exclude relationship.tag!={tag}\n      title {}\n",
                 included.join(" "),
                 dsl_string(&diagram.name)
             ));
+            let mut objects = Vec::new();
+            collect_diagram_objects(&diagram.children, &mut objects);
+            for object in objects {
+                let Some(identifier) = identifiers.get(object.element.as_str()) else {
+                    continue;
+                };
+                let Some(bounds) = object.bounds else {
+                    continue;
+                };
+                output.push_str(&format!(
+                    "      object {identifier} {{\n        x {}\n        y {}\n        width {}\n        height {}\n",
+                    bounds.x, bounds.y, bounds.width, bounds.height
+                ));
+                if let Some(color) = object.attributes.get("fillColor") {
+                    output.push_str(&format!("        background {color}\n"));
+                }
+                output.push_str("      }\n");
+            }
+            output.push_str("    }\n");
         }
         output.push_str("  }\n");
     }
     output.push_str("}\n");
     output
+}
+
+fn append_projected_archimate_block(
+    output: &mut String,
+    elements: &[&ArchiElement],
+    identifiers: &HashMap<&str, String>,
+    indent: usize,
+) {
+    if elements.is_empty() {
+        return;
+    }
+    let spaces = " ".repeat(indent);
+    output.push_str(&format!("{spaces}archimate {{\n"));
+    for element in elements {
+        append_projected_element(
+            output,
+            element,
+            &identifiers[element.id.as_str()],
+            indent + 2,
+        );
+    }
+    output.push_str(&format!("{spaces}}}\n"));
+}
+
+fn collect_diagram_objects<'a>(
+    children: &'a [ArchiDiagramChild],
+    objects: &mut Vec<&'a ArchiDiagramObject>,
+) {
+    for child in children {
+        match child {
+            ArchiDiagramChild::Object(object) => {
+                objects.push(object);
+                collect_diagram_objects(&object.children, objects);
+            }
+            ArchiDiagramChild::Group(group) => collect_diagram_objects(&group.children, objects),
+        }
+    }
 }
 
 fn append_projected_element(
@@ -487,12 +528,8 @@ fn append_projected_element(
         .as_ref()
         .map(|description| format!(" {}", dsl_string(description)))
         .unwrap_or_default();
-    let keyword = match element.native_type.as_str() {
-        "BusinessActor" => "person",
-        "ApplicationComponent" => "softwareSystem",
-        "Node" => "deploymentNode",
-        _ => "element",
-    };
+    let keyword =
+        crate::compiler::archimate_element_keyword(&element.native_type).unwrap_or("grouping");
     output.push_str(&format!(
         "{spaces}{identifier} = {keyword} {name}{description}\n"
     ));
@@ -1105,13 +1142,15 @@ mod tests {
         compiler::validate(&workspace).unwrap();
         assert_eq!(workspace.views.len(), 1);
         assert_eq!(workspace.groups.len(), 1);
-        assert!(dsl.contains("person \"User <Admin>\""));
-        assert!(dsl.contains("softwareSystem \"Orders\""));
-        assert!(dsl.contains("deploymentNode \"Primary Node\""));
+        assert!(dsl.contains("businessActor \"User <Admin>\""));
+        assert!(dsl.contains("applicationComponent \"Orders\""));
+        assert!(dsl.contains("node \"Primary Node\""));
+        assert!(dsl.contains("archimateView context"));
         assert!(dsl.contains("user_admin -> orders \"Uses\""));
         assert!(dsl.contains("boundary -> orders {"));
-        assert!(dsl.contains("archimate:CompositionRelationship"));
+        assert!(dsl.contains("type CompositionRelationship"));
         assert!(dsl.contains("exclude relationship.tag!=archi_view_context"));
+        assert!(dsl.contains("object orders {"));
         assert!(!dsl.contains("archi_id_"));
         assert!(!dsl.contains("actor-1"));
 

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<archimate:model xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:archimate="http://www.archimatetool.com/archimate" name="M8.3 ArchiMate Profile" id="id-c4c-model" version="5.0.0">
+  <folder name="Strategy" id="id-c4c-folder-strategy" type="strategy">
+  </folder>
+  <folder name="Business" id="id-c4c-folder-business" type="business">
+    <element xsi:type="archimate:BusinessActor" name="Operator" id="id-c4c-element-operator"/>
+  </folder>
+  <folder name="Application" id="id-c4c-folder-application" type="application">
+    <element xsi:type="archimate:ApplicationComponent" name="Internal API Gateway" id="id-c4c-element-gateway"/>
+    <element xsi:type="archimate:ApplicationComponent" name="External Ledger" id="id-c4c-element-ledger"/>
+  </folder>
+  <folder name="Technology &amp; Physical" id="id-c4c-folder-technology" type="technology">
+    <element xsi:type="archimate:Node" name="Cache Engine" id="id-c4c-element-cache"/>
+  </folder>
+  <folder name="Motivation" id="id-c4c-folder-motivation" type="motivation">
+  </folder>
+  <folder name="Implementation &amp; Migration" id="id-c4c-folder-implementation_migration" type="implementation_migration">
+  </folder>
+  <folder name="Other" id="id-c4c-folder-other" type="other">
+  </folder>
+  <folder name="Relations" id="id-c4c-folder-relations" type="relations">
+    <element xsi:type="archimate:FlowRelationship" id="id-c4c-relationship-1" source="id-c4c-element-gateway" target="id-c4c-element-ledger" name="Posts entries"/>
+    <element xsi:type="archimate:AccessRelationship" id="id-c4c-relationship-2" source="id-c4c-element-gateway" target="id-c4c-element-cache" name="Reads cached data"/>
+  </folder>
+  <folder name="Views" id="id-c4c-folder-diagrams" type="diagrams">
+    <element xsi:type="archimate:ArchimateDiagramModel" name="dex-native" id="id-c4c-view-dex-native" connectionRouterType="2">
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-dex-native-operator" archimateElement="id-c4c-element-operator" type="1" fillColor="#ffffb5">
+        <bounds x="200" y="40" width="180" height="80"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-dex-native-gateway" archimateElement="id-c4c-element-gateway" type="1" fillColor="#008e00" fontColor="#ffffff" lineColor="#006600">
+        <bounds x="300" y="120" width="180" height="80"/>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-dex-native-1" source="id-c4c-viewobject-dex-native-gateway" target="id-c4c-viewobject-dex-native-ledger" archimateRelationship="id-c4c-relationship-1" lineColor="#00aa00" lineWidth="2">
+        </sourceConnection>
+        <sourceConnection xsi:type="archimate:Connection" id="id-c4c-connection-dex-native-2" source="id-c4c-viewobject-dex-native-gateway" target="id-c4c-viewobject-dex-native-cache" archimateRelationship="id-c4c-relationship-2">
+        </sourceConnection>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-dex-native-ledger" archimateElement="id-c4c-element-ledger" type="1" fillColor="#b5ffff" targetConnections="id-c4c-connection-dex-native-1">
+        <bounds x="600" y="120" width="180" height="80"/>
+      </child>
+      <child xsi:type="archimate:DiagramObject" id="id-c4c-viewobject-dex-native-cache" archimateElement="id-c4c-element-cache" type="1" fillColor="#c9d9ff" targetConnections="id-c4c-connection-dex-native-2">
+        <bounds x="200" y="820" width="180" height="80"/>
+      </child>
+    </element>
+  </folder>
+</archimate:model>

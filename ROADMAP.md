@@ -63,6 +63,12 @@ Status: implemented with deterministic native `.archimate` XML, folders, element
 relationships, diagram views, diagram objects, and connections. This Archi-specific format
 is separate from the Open Group `archimate` exchange exporter.
 
+## M8.3 — ArchiMate extension profile
+
+M8.3 covers the ArchiMate vocabulary listed in the ArchiMate 3.1 reference cards, plus basic formatting and Archi export/import mapping.
+
+Status: implemented with explicit ArchiMate element/relationship types, formatting metadata, `archimateView` support, and Archi-native/Open Group export mappings. Full formal ArchiMate conformance, including the relationship validity matrix, derivation rules, viewpoints, and advanced semantic validation, is deferred.
+
 ## M9 — compatibility suite
 
 Add fixture coverage for every language construct and compare outputs against expected snapshots.

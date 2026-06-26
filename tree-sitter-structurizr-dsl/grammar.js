@@ -57,6 +57,7 @@ module.exports = grammar({
     ),
 
     _model_statement: $ => choice(
+      $.archimate_block,
       $.element_declaration,
       $.relationship,
       $.removed_relationship,
@@ -91,6 +92,105 @@ module.exports = grammar({
       choice($._newline, $._model_block),
     ),
 
+    archimate_block: $ => seq(kw($, 'archimate'), $._archimate_block),
+
+    _archimate_block: $ => seq(
+      '{', $._newline,
+      repeat(choice($._newline, $.archimate_element_declaration, $.relationship)),
+      '}', $._newline,
+    ),
+
+    archimate_element_declaration: $ => seq(
+      optional(seq(field('id', $.identifier), '=')),
+      field('kind', $._archimate_element_kind),
+      repeat1($.value),
+      choice($._newline, $._archimate_element_block),
+    ),
+
+    _archimate_element_kind: $ => choice(
+      kw($, 'resource'),
+      kw($, 'capability'),
+      kw($, 'valueStream'),
+      kw($, 'courseOfAction'),
+      kw($, 'businessActor'),
+      kw($, 'businessRole'),
+      kw($, 'businessCollaboration'),
+      kw($, 'businessInterface'),
+      kw($, 'businessProcess'),
+      kw($, 'businessFunction'),
+      kw($, 'businessInteraction'),
+      kw($, 'businessEvent'),
+      kw($, 'businessService'),
+      kw($, 'businessObject'),
+      kw($, 'contract'),
+      kw($, 'representation'),
+      kw($, 'product'),
+      kw($, 'applicationComponent'),
+      kw($, 'applicationCollaboration'),
+      kw($, 'applicationInterface'),
+      kw($, 'applicationFunction'),
+      kw($, 'applicationInteraction'),
+      kw($, 'applicationProcess'),
+      kw($, 'applicationEvent'),
+      kw($, 'applicationService'),
+      kw($, 'dataObject'),
+      kw($, 'node'),
+      kw($, 'device'),
+      kw($, 'systemSoftware'),
+      kw($, 'technologyCollaboration'),
+      kw($, 'technologyInterface'),
+      kw($, 'path'),
+      kw($, 'communicationNetwork'),
+      kw($, 'technologyFunction'),
+      kw($, 'technologyProcess'),
+      kw($, 'technologyInteraction'),
+      kw($, 'technologyEvent'),
+      kw($, 'technologyService'),
+      kw($, 'artifact'),
+      kw($, 'equipment'),
+      kw($, 'facility'),
+      kw($, 'distributionNetwork'),
+      kw($, 'material'),
+      kw($, 'stakeholder'),
+      kw($, 'driver'),
+      kw($, 'assessment'),
+      kw($, 'goal'),
+      kw($, 'outcome'),
+      kw($, 'principle'),
+      kw($, 'requirement'),
+      kw($, 'constraint'),
+      kw($, 'meaning'),
+      kw($, 'value'),
+      kw($, 'workPackage'),
+      kw($, 'deliverable'),
+      kw($, 'implementationEvent'),
+      kw($, 'plateau'),
+      kw($, 'gap'),
+      kw($, 'grouping'),
+      kw($, 'location'),
+      kw($, 'junction'),
+    ),
+
+    _archimate_element_block: $ => seq(
+      '{', $._newline,
+      repeat(choice($._newline, $.property_statement, $.archimate_element_format, $.property_block, $.perspectives_block, $.directive)),
+      '}', $._newline,
+    ),
+
+    archimate_element_format: $ => seq(
+      choice(
+        kw($, 'background'),
+        kw($, 'color'),
+        kw($, 'colour'),
+        kw($, 'stroke'),
+        kw($, 'fontSize'),
+        kw($, 'width'),
+        kw($, 'height'),
+      ),
+      $._style_value,
+      $._newline,
+    ),
+
     relationship: $ => seq(
       field('source', $.identifier),
       field('operator', '->'),
@@ -112,12 +212,16 @@ module.exports = grammar({
       repeat(choice(
         $._newline,
         $.property_statement,
+        $.relationship_type_statement,
+        $.relationship_style_property,
         $.property_block,
         $.perspectives_block,
         $.directive,
       )),
       '}', $._newline,
     ),
+
+    relationship_type_statement: $ => seq(kw($, 'type'), $.value, $._newline),
 
     enterprise: $ => seq(kw($, 'enterprise'), $.value, $._model_block),
     group: $ => seq(kw($, 'group'), $.value, $._model_block),
@@ -206,6 +310,7 @@ module.exports = grammar({
       $.deployment_view,
       $.custom_view,
       $.image_view,
+      $.archimate_view,
       $.property_block,
       $.styles_block,
       $.theme_statement,
@@ -279,6 +384,12 @@ module.exports = grammar({
       $._image_view_block,
     ),
 
+    archimate_view: $ => seq(
+      kw($, 'archimateView'),
+      optional($.value),
+      $._archimate_view_block,
+    ),
+
     _static_view_block: $ => seq(
       '{', $._newline,
       repeat(choice($._newline, $._common_view_statement)),
@@ -294,6 +405,12 @@ module.exports = grammar({
     _image_view_block: $ => seq(
       '{', $._newline,
       repeat(choice($._newline, $._common_view_statement, $.image_source)),
+      '}', $._newline,
+    ),
+
+    _archimate_view_block: $ => seq(
+      '{', $._newline,
+      repeat(choice($._newline, $._common_view_statement, $.archimate_object)),
       '}', $._newline,
     ),
 
@@ -363,6 +480,30 @@ module.exports = grammar({
     image_source: $ => choice(
       seq(choice(kw($, 'plantuml'), kw($, 'mermaid'), kw($, 'image')), $.value, $._newline),
       seq(kw($, 'kroki'), $.value, $.value, $._newline),
+    ),
+
+    archimate_object: $ => seq(
+      kw($, 'object'),
+      field('element', $.identifier),
+      '{', $._newline,
+      repeat(choice($._newline, $.archimate_object_property)),
+      '}', $._newline,
+    ),
+
+    archimate_object_property: $ => seq(
+      choice(
+        kw($, 'x'),
+        kw($, 'y'),
+        kw($, 'width'),
+        kw($, 'height'),
+        kw($, 'background'),
+        kw($, 'color'),
+        kw($, 'colour'),
+        kw($, 'stroke'),
+        kw($, 'fontSize'),
+      ),
+      $._style_value,
+      $._newline,
     ),
 
     styles_block: $ => seq(kw($, 'styles'), $._styles_block),

@@ -141,6 +141,10 @@ mod tests {
             include_str!("../tests/fixtures/m8-exporters.dsl"),
         ),
         (
+            "tests/fixtures/m83-archimate-profile.dsl",
+            include_str!("../tests/fixtures/m83-archimate-profile.dsl"),
+        ),
+        (
             "tests/fixtures/m7-custom-importer.dsl",
             include_str!("../tests/fixtures/m7-custom-importer.dsl"),
         ),

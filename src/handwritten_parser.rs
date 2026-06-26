@@ -259,6 +259,10 @@ impl Parser {
             self.parse_group();
             return;
         }
+        if self.at_keyword("archimate") {
+            self.parse_archimate_block();
+            return;
+        }
 
         let statement_start = self.current().span;
         let assigned = if self.identifier_ahead() && self.nth_at(1, TokenTag::Equals) {
@@ -279,6 +283,48 @@ impl Parser {
             self.skip_statement();
         } else {
             self.unknown_statement("model");
+        }
+    }
+
+    fn parse_archimate_block(&mut self) {
+        self.advance();
+        if !self.open_block("archimate") {
+            return;
+        }
+        loop {
+            self.skip_newlines();
+            if self.at(TokenTag::RightBrace) {
+                self.close_block("archimate");
+                return;
+            }
+            if self.at(TokenTag::Eof) {
+                self.missing_closing_brace("archimate");
+                return;
+            }
+            if self.relationship_ahead(TokenTag::Arrow) {
+                self.parse_relationship();
+                continue;
+            }
+            let statement_start = self.current().span;
+            let assigned = if self.identifier_ahead() && self.nth_at(1, TokenTag::Equals) {
+                let identifier = self.take_identifier().unwrap();
+                self.advance();
+                Some(identifier)
+            } else {
+                None
+            };
+            if let Some(kind) = self.current_archimate_element_kind() {
+                self.parse_element(statement_start, assigned, kind);
+            } else if assigned.is_some() {
+                self.error(
+                    self.current().span,
+                    "expected an ArchiMate element type after '='",
+                    Some("use businessActor, applicationComponent, node, or another supported ArchiMate keyword"),
+                );
+                self.skip_statement();
+            } else {
+                self.unknown_statement("archimate");
+            }
         }
     }
 
@@ -364,6 +410,14 @@ impl Parser {
         ]
         .into_iter()
         .find_map(|(keyword, kind)| self.at_keyword(keyword).then_some(kind))
+    }
+
+    fn current_archimate_element_kind(&self) -> Option<ElementKind> {
+        if let TokenKind::Identifier(value) = &self.current().kind {
+            crate::compiler::archimate_element_kind(value)
+        } else {
+            None
+        }
     }
 
     fn parse_element(
@@ -533,10 +587,28 @@ impl Parser {
                 "component discovery is deferred; syntax was preserved",
             );
             self.workspace.elements[index].directives.push(directive);
+        } else if let Some(name) = self.archimate_element_property() {
+            if let Some(property) = self.parse_style_property(name) {
+                self.workspace.elements[index].attributes.push(property);
+            }
         } else {
             return false;
         }
         true
+    }
+
+    fn archimate_element_property(&self) -> Option<&'static str> {
+        [
+            "background",
+            "color",
+            "colour",
+            "stroke",
+            "fontSize",
+            "width",
+            "height",
+        ]
+        .into_iter()
+        .find(|name| self.at_keyword(name))
     }
 
     fn parse_health_check(&mut self, index: usize) {
@@ -678,6 +750,23 @@ impl Parser {
             self.workspace.relationships[index]
                 .perspectives
                 .extend(perspectives);
+        } else if self.at_keyword("type") {
+            if let Some(mut property) = self.parse_single_property("type") {
+                if let Some(native_type) =
+                    crate::compiler::archimate_relationship_type(&property.value)
+                {
+                    property.value = native_type.into();
+                }
+                self.workspace.relationships[index]
+                    .attributes
+                    .push(property);
+            }
+        } else if let Some(name) = self.relationship_style_property() {
+            if let Some(property) = self.parse_style_property(name) {
+                self.workspace.relationships[index]
+                    .attributes
+                    .push(property);
+            }
         } else {
             self.unknown_statement("relationship");
         }
@@ -900,6 +989,8 @@ impl Parser {
             Some(ViewKind::Custom)
         } else if self.at_keyword("image") {
             Some(ViewKind::Image)
+        } else if self.at_keyword("archimateView") {
+            Some(ViewKind::ArchiMate)
         } else {
             None
         };
@@ -1326,7 +1417,9 @@ impl Parser {
         let mut filter = None;
         let mut environment = None;
         let arguments = match kind {
-            ViewKind::SystemLandscape | ViewKind::Custom => self.take_values(),
+            ViewKind::SystemLandscape | ViewKind::Custom | ViewKind::ArchiMate => {
+                self.take_values()
+            }
             ViewKind::Filtered => {
                 let base = self.take_identifier();
                 let mode = self.take_identifier();
@@ -1388,7 +1481,7 @@ impl Parser {
         };
         let maximum = match kind {
             ViewKind::Custom => 3,
-            ViewKind::Image => 1,
+            ViewKind::Image | ViewKind::ArchiMate => 1,
             _ => 2,
         };
         self.limit_arguments(&arguments, maximum, "too many arguments for view");
@@ -1523,6 +1616,8 @@ impl Parser {
         } else if self.at_keyword("properties") {
             view.properties
                 .extend(self.parse_property_block("properties"));
+        } else if view.kind == ViewKind::ArchiMate && self.at_keyword("object") {
+            self.parse_archimate_view_object(view);
         } else if view.kind == ViewKind::Dynamic {
             self.parse_dynamic_relationship(view);
         } else if view.kind == ViewKind::Image
@@ -1533,6 +1628,59 @@ impl Parser {
             self.parse_image_source(view);
         } else {
             self.unknown_statement("view");
+        }
+    }
+
+    fn parse_archimate_view_object(&mut self, view: &mut View) {
+        let start = self.advance();
+        let Some((identifier, identifier_span)) = self.take_identifier() else {
+            self.error(
+                start.span,
+                "archimateView object identifier is missing",
+                None,
+            );
+            self.skip_statement();
+            return;
+        };
+        if !self.open_block("archimateView object") {
+            return;
+        }
+        loop {
+            self.skip_newlines();
+            if self.at(TokenTag::RightBrace) {
+                self.close_block("archimateView object");
+                return;
+            }
+            if self.at(TokenTag::Eof) {
+                self.missing_closing_brace("archimateView object");
+                return;
+            }
+            let Some(name) = [
+                "x",
+                "y",
+                "width",
+                "height",
+                "background",
+                "color",
+                "colour",
+                "stroke",
+                "fontSize",
+            ]
+            .into_iter()
+            .find(|name| self.at_keyword(name)) else {
+                self.unknown_statement("archimateView object");
+                continue;
+            };
+            if let Some(mut property) = self.parse_style_property(name) {
+                let key = if property.key == "colour" {
+                    "color".into()
+                } else {
+                    property.key.clone()
+                };
+                property.key = format!("object.{identifier}.{key}");
+                property.span = identifier_span.merge(property.span);
+                view.properties.push(property);
+            }
         }
     }
 
@@ -2069,6 +2217,7 @@ fn element_argument_properties(kind: &ElementKind, arguments: &[(String, Span)])
             &["reference", "deploymentGroups", "tags"]
         }
         ElementKind::DeploymentEnvironment | ElementKind::DeploymentGroup => &["name"],
+        ElementKind::ArchiMate(_) => &["name", "description"],
     };
     argument_properties(arguments, names)
 }
@@ -2148,6 +2297,14 @@ fn inline_properties(kind: &ElementKind, arguments: &[(String, Span)]) -> Inline
         ElementKind::DeploymentEnvironment | ElementKind::DeploymentGroup => {
             (None, None, Vec::new(), None, None, Vec::new())
         }
+        ElementKind::ArchiMate(_) => (
+            optional_argument(arguments.get(1)),
+            None,
+            Vec::new(),
+            None,
+            None,
+            Vec::new(),
+        ),
     };
     InlineProperties {
         description: values.0,
@@ -2166,6 +2323,7 @@ fn maximum_arguments(kind: &ElementKind) -> usize {
         ElementKind::Generic | ElementKind::DeploymentNode => 5,
         ElementKind::SoftwareSystemInstance | ElementKind::ContainerInstance => 3,
         ElementKind::DeploymentEnvironment | ElementKind::DeploymentGroup => 1,
+        ElementKind::ArchiMate(_) => 2,
     }
 }
 
@@ -2198,6 +2356,7 @@ fn element_label(kind: &ElementKind) -> &'static str {
         ElementKind::InfrastructureNode => "infrastructure node",
         ElementKind::SoftwareSystemInstance => "software system instance",
         ElementKind::ContainerInstance => "container instance",
+        ElementKind::ArchiMate(_) => "ArchiMate element",
     }
 }
 
@@ -2212,6 +2371,7 @@ fn view_label(kind: &ViewKind) -> &'static str {
         ViewKind::Deployment => "deployment",
         ViewKind::Custom => "custom",
         ViewKind::Image => "image",
+        ViewKind::ArchiMate => "archimateView",
     }
 }
 

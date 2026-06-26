@@ -103,7 +103,7 @@ pub struct Element {
     pub id_span: Span,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ElementKind {
     Person,
     SoftwareSystem,
@@ -116,6 +116,7 @@ pub enum ElementKind {
     InfrastructureNode,
     SoftwareSystemInstance,
     ContainerInstance,
+    ArchiMate(&'static str),
 }
 
 #[derive(Debug, Clone)]
@@ -169,6 +170,7 @@ pub enum ViewKind {
     Deployment,
     Custom,
     Image,
+    ArchiMate,
 }
 
 #[derive(Debug, Clone)]
@@ -383,6 +385,165 @@ pub struct BrandingFont {
 pub struct CompileOptions {
     pub allow_network: bool,
     pub strict_safe: bool,
+}
+
+pub const ARCHIMATE_ELEMENT_TYPES: &[(&str, &str, &str)] = &[
+    ("resource", "Resource", "strategy"),
+    ("capability", "Capability", "strategy"),
+    ("valueStream", "ValueStream", "strategy"),
+    ("courseOfAction", "CourseOfAction", "strategy"),
+    ("businessActor", "BusinessActor", "business"),
+    ("businessRole", "BusinessRole", "business"),
+    ("businessCollaboration", "BusinessCollaboration", "business"),
+    ("businessInterface", "BusinessInterface", "business"),
+    ("businessProcess", "BusinessProcess", "business"),
+    ("businessFunction", "BusinessFunction", "business"),
+    ("businessInteraction", "BusinessInteraction", "business"),
+    ("businessEvent", "BusinessEvent", "business"),
+    ("businessService", "BusinessService", "business"),
+    ("businessObject", "BusinessObject", "business"),
+    ("contract", "Contract", "business"),
+    ("representation", "Representation", "business"),
+    ("product", "Product", "business"),
+    (
+        "applicationComponent",
+        "ApplicationComponent",
+        "application",
+    ),
+    (
+        "applicationCollaboration",
+        "ApplicationCollaboration",
+        "application",
+    ),
+    (
+        "applicationInterface",
+        "ApplicationInterface",
+        "application",
+    ),
+    ("applicationFunction", "ApplicationFunction", "application"),
+    (
+        "applicationInteraction",
+        "ApplicationInteraction",
+        "application",
+    ),
+    ("applicationProcess", "ApplicationProcess", "application"),
+    ("applicationEvent", "ApplicationEvent", "application"),
+    ("applicationService", "ApplicationService", "application"),
+    ("dataObject", "DataObject", "application"),
+    ("node", "Node", "technology"),
+    ("device", "Device", "technology"),
+    ("systemSoftware", "SystemSoftware", "technology"),
+    (
+        "technologyCollaboration",
+        "TechnologyCollaboration",
+        "technology",
+    ),
+    ("technologyInterface", "TechnologyInterface", "technology"),
+    ("path", "Path", "technology"),
+    ("communicationNetwork", "CommunicationNetwork", "technology"),
+    ("technologyFunction", "TechnologyFunction", "technology"),
+    ("technologyProcess", "TechnologyProcess", "technology"),
+    (
+        "technologyInteraction",
+        "TechnologyInteraction",
+        "technology",
+    ),
+    ("technologyEvent", "TechnologyEvent", "technology"),
+    ("technologyService", "TechnologyService", "technology"),
+    ("artifact", "Artifact", "technology"),
+    ("equipment", "Equipment", "technology"),
+    ("facility", "Facility", "technology"),
+    ("distributionNetwork", "DistributionNetwork", "technology"),
+    ("material", "Material", "technology"),
+    ("stakeholder", "Stakeholder", "motivation"),
+    ("driver", "Driver", "motivation"),
+    ("assessment", "Assessment", "motivation"),
+    ("goal", "Goal", "motivation"),
+    ("outcome", "Outcome", "motivation"),
+    ("principle", "Principle", "motivation"),
+    ("requirement", "Requirement", "motivation"),
+    ("constraint", "Constraint", "motivation"),
+    ("meaning", "Meaning", "motivation"),
+    ("value", "Value", "motivation"),
+    ("workPackage", "WorkPackage", "implementation_migration"),
+    ("deliverable", "Deliverable", "implementation_migration"),
+    (
+        "implementationEvent",
+        "ImplementationEvent",
+        "implementation_migration",
+    ),
+    ("plateau", "Plateau", "implementation_migration"),
+    ("gap", "Gap", "implementation_migration"),
+    ("grouping", "Grouping", "other"),
+    ("location", "Location", "other"),
+    ("junction", "Junction", "other"),
+];
+
+pub const ARCHIMATE_RELATIONSHIP_TYPES: &[(&str, &str)] = &[
+    ("composition", "CompositionRelationship"),
+    ("aggregation", "AggregationRelationship"),
+    ("assignment", "AssignmentRelationship"),
+    ("realization", "RealizationRelationship"),
+    ("serving", "ServingRelationship"),
+    ("access", "AccessRelationship"),
+    ("influence", "InfluenceRelationship"),
+    ("triggering", "TriggeringRelationship"),
+    ("flow", "FlowRelationship"),
+    ("specialization", "SpecializationRelationship"),
+    ("association", "AssociationRelationship"),
+];
+
+pub fn archimate_element_kind(keyword: &str) -> Option<ElementKind> {
+    ARCHIMATE_ELEMENT_TYPES
+        .iter()
+        .find(|(name, _, _)| keyword.eq_ignore_ascii_case(name))
+        .map(|(_, native, _)| ElementKind::ArchiMate(native))
+}
+
+pub fn archimate_element_keyword(native_type: &str) -> Option<&'static str> {
+    ARCHIMATE_ELEMENT_TYPES
+        .iter()
+        .find(|(_, native, _)| native_type.eq_ignore_ascii_case(native))
+        .map(|(keyword, _, _)| *keyword)
+}
+
+pub fn archimate_element_folder(native_type: &str) -> Option<&'static str> {
+    ARCHIMATE_ELEMENT_TYPES
+        .iter()
+        .find(|(_, native, _)| native_type.eq_ignore_ascii_case(native))
+        .map(|(_, _, folder)| *folder)
+}
+
+pub fn archimate_relationship_type(value: &str) -> Option<&'static str> {
+    let compact = value
+        .trim()
+        .strip_prefix("archimate:")
+        .unwrap_or(value.trim())
+        .trim_end_matches("Relationship");
+    ARCHIMATE_RELATIONSHIP_TYPES
+        .iter()
+        .find(|(short, native)| {
+            compact.eq_ignore_ascii_case(short)
+                || value.eq_ignore_ascii_case(native)
+                || value.eq_ignore_ascii_case(&short.to_ascii_lowercase())
+        })
+        .map(|(_, native)| *native)
+}
+
+pub fn relationship_archimate_type(relationship: &Relationship) -> Option<&str> {
+    relationship
+        .attributes
+        .iter()
+        .rev()
+        .find(|property| property.key == "type")
+        .map(|property| property.value.as_str())
+        .or_else(|| {
+            relationship
+                .tags
+                .iter()
+                .find_map(|tag| tag.strip_prefix("archimate:"))
+        })
+        .and_then(archimate_relationship_type)
 }
 
 pub fn compile_file(path: &str) -> Result<Workspace, String> {
@@ -745,8 +906,10 @@ pub fn validate(workspace: &Workspace) -> Result<(), String> {
             ViewKind::Deployment => validate_deployment_view(workspace, view, &mut diagnostics),
             ViewKind::Custom => validate_custom_view(workspace, view, &mut diagnostics),
             ViewKind::Image => validate_image_view(workspace, view, &mut diagnostics),
+            ViewKind::ArchiMate => validate_archimate_view(workspace, view, &mut diagnostics),
         }
     }
+    validate_archimate_metadata(workspace, &mut diagnostics);
     validate_styles(workspace, &mut diagnostics);
     if diagnostics.is_empty() {
         Ok(())
@@ -977,6 +1140,7 @@ fn validate_filtered_view(workspace: &Workspace, view: &View, diagnostics: &mut 
                     | ViewKind::SystemContext
                     | ViewKind::Container
                     | ViewKind::Component
+                    | ViewKind::ArchiMate
             ) => {}
         Some(base) => diagnostics.push(
             Diagnostic::error(
@@ -1165,6 +1329,95 @@ fn validate_image_view(workspace: &Workspace, view: &View, diagnostics: &mut Vec
     }
 }
 
+fn validate_archimate_view(workspace: &Workspace, view: &View, diagnostics: &mut Vec<Diagnostic>) {
+    let expanded = expand_view(workspace, view);
+    for (identifier, properties) in archimate_view_objects(view) {
+        if !expanded.elements.contains(identifier) {
+            diagnostics.push(
+                Diagnostic::error(
+                    properties
+                        .first()
+                        .map_or(view.span, |property| property.span),
+                    format!("archimateView object '{identifier}' is not included in the view"),
+                )
+                .with_help("include the element before defining manual layout for it"),
+            );
+        }
+        for property in properties {
+            match property.key.rsplit('.').next().unwrap_or("") {
+                "x" | "y" | "width" | "height" => {
+                    validate_integer(property, Some((0, i32::MAX)), diagnostics)
+                }
+                "background" | "color" | "stroke" => validate_hex_color(property, diagnostics),
+                "fontSize" => validate_integer(property, Some((0, i32::MAX)), diagnostics),
+                _ => {}
+            }
+        }
+    }
+}
+
+fn validate_archimate_metadata(workspace: &Workspace, diagnostics: &mut Vec<Diagnostic>) {
+    for element in &workspace.elements {
+        for property in &element.attributes {
+            match property.key.as_str() {
+                "background" | "color" | "stroke" => validate_hex_color(property, diagnostics),
+                "fontSize" | "width" | "height" => {
+                    validate_integer(property, Some((0, i32::MAX)), diagnostics)
+                }
+                _ => {}
+            }
+        }
+    }
+    for relationship in &workspace.relationships {
+        for property in &relationship.attributes {
+            match property.key.as_str() {
+                "type" if archimate_relationship_type(&property.value).is_none() => diagnostics.push(
+                    Diagnostic::error(
+                        property.span,
+                        format!("unknown ArchiMate relationship type '{}'", property.value),
+                    )
+                    .with_help("use FlowRelationship, AccessRelationship, ServingRelationship, or another supported ArchiMate relationship type"),
+                ),
+                "color" => validate_hex_color(property, diagnostics),
+                "thickness" => validate_integer(property, Some((0, i32::MAX)), diagnostics),
+                "style" => validate_enum(property, &["solid", "dashed", "dotted"], "relationship style", diagnostics),
+                _ => {}
+            }
+        }
+    }
+}
+
+fn validate_hex_color(property: &Property, diagnostics: &mut Vec<Diagnostic>) {
+    let valid = property.value.len() == 7
+        && property.value.starts_with('#')
+        && property.value[1..]
+            .chars()
+            .all(|character| character.is_ascii_hexdigit());
+    if !valid {
+        diagnostics.push(
+            Diagnostic::error(
+                property.span,
+                format!("{} must be a #RRGGBB color", property.key),
+            )
+            .with_help("use a six-digit hexadecimal color such as #008e00"),
+        );
+    }
+}
+
+fn archimate_view_objects(view: &View) -> HashMap<&str, Vec<&Property>> {
+    let mut objects: HashMap<&str, Vec<&Property>> = HashMap::new();
+    for property in &view.properties {
+        let Some(rest) = property.key.strip_prefix("object.") else {
+            continue;
+        };
+        let Some((identifier, _)) = rest.rsplit_once('.') else {
+            continue;
+        };
+        objects.entry(identifier).or_default().push(property);
+    }
+    objects
+}
+
 fn validate_property_spans(properties: &[Property]) {
     for property in properties {
         debug_assert!(property.span.end >= property.span.start);
@@ -1212,7 +1465,8 @@ fn validate_parent(workspace: &Workspace, element: &Element, diagnostics: &mut V
         ElementKind::Person
         | ElementKind::SoftwareSystem
         | ElementKind::Generic
-        | ElementKind::DeploymentEnvironment => parent.is_none(),
+        | ElementKind::DeploymentEnvironment
+        | ElementKind::ArchiMate(_) => parent.is_none(),
         ElementKind::Container => {
             matches!(parent, Some(parent) if parent.kind == ElementKind::SoftwareSystem)
         }
@@ -1258,7 +1512,10 @@ fn validate_group(workspace: &Workspace, element: &Element, diagnostics: &mut Ve
     {
         None => matches!(
             element.kind,
-            ElementKind::Person | ElementKind::SoftwareSystem | ElementKind::Generic
+            ElementKind::Person
+                | ElementKind::SoftwareSystem
+                | ElementKind::Generic
+                | ElementKind::ArchiMate(_)
         ),
         Some(owner) if owner.kind == ElementKind::SoftwareSystem => {
             element.kind == ElementKind::Container
@@ -1443,6 +1700,7 @@ fn element_kind_label(kind: &ElementKind) -> &'static str {
         ElementKind::InfrastructureNode => "infrastructure node",
         ElementKind::SoftwareSystemInstance => "software system instance",
         ElementKind::ContainerInstance => "container instance",
+        ElementKind::ArchiMate(_) => "ArchiMate element",
     }
 }
 
@@ -2349,6 +2607,18 @@ fn expand_view(workspace: &Workspace, view: &View) -> ExpandedView {
                 }
             }
         }
+        ViewKind::ArchiMate => {
+            for element in &workspace.elements {
+                expanded.elements.insert(element.id.clone());
+            }
+            for (index, relationship) in workspace.relationships.iter().enumerate() {
+                if expanded.elements.contains(&relationship.source)
+                    && expanded.elements.contains(&relationship.destination)
+                {
+                    expanded.relationships.insert(index);
+                }
+            }
+        }
         _ => {}
     }
     if !reluctant {
@@ -2663,6 +2933,7 @@ pub(crate) fn default_view_key(kind: &ViewKind) -> &'static str {
         ViewKind::Deployment => "deployment",
         ViewKind::Custom => "custom",
         ViewKind::Image => "image",
+        ViewKind::ArchiMate => "archimate",
     }
 }
 
@@ -2764,6 +3035,7 @@ fn terminology_label<'a>(workspace: &'a Workspace, kind: &ElementKind) -> &'a st
         ElementKind::Component => Some("component"),
         ElementKind::DeploymentNode => Some("deploymentNode"),
         ElementKind::InfrastructureNode => Some("infrastructureNode"),
+        ElementKind::ArchiMate(kind) => return kind,
         _ => None,
     };
     key.and_then(|key| {
@@ -2790,6 +3062,7 @@ fn element_style_tag(kind: &ElementKind) -> &'static str {
         ElementKind::InfrastructureNode => "Infrastructure Node",
         ElementKind::SoftwareSystemInstance => "Software System Instance",
         ElementKind::ContainerInstance => "Container Instance",
+        ElementKind::ArchiMate(kind) => kind,
     }
 }
 
@@ -2806,6 +3079,7 @@ fn default_kind_label(kind: &ElementKind) -> &'static str {
         ElementKind::InfrastructureNode => "Infrastructure Node",
         ElementKind::SoftwareSystemInstance => "Software System Instance",
         ElementKind::ContainerInstance => "Container Instance",
+        ElementKind::ArchiMate(kind) => kind,
     }
 }
 
@@ -3334,6 +3608,53 @@ mod tests {
         ] {
             assert!(compile(source).unwrap_err().contains(message));
         }
+    }
+
+    #[test]
+    fn parses_m83_archimate_profile() {
+        let workspace =
+            compile(include_str!("../tests/fixtures/m83-archimate-profile.dsl")).unwrap();
+        validate(&workspace).unwrap();
+        assert!(workspace
+            .elements
+            .iter()
+            .any(|element| element.id == "gateway"
+                && element.kind == ElementKind::ArchiMate("ApplicationComponent")));
+        assert_eq!(
+            relationship_archimate_type(&workspace.relationships[0]),
+            Some("FlowRelationship")
+        );
+        assert_eq!(workspace.views[0].kind, ViewKind::ArchiMate);
+        assert!(workspace.views[0]
+            .properties
+            .iter()
+            .any(|property| property.key == "object.gateway.x" && property.value == "300"));
+    }
+
+    #[test]
+    fn rejects_invalid_m83_archimate_profile_data() {
+        for (source, message) in [
+            (
+                "workspace {\n  model {\n    archimate {\n      a = businessActor A {\n        background red\n      }\n    }\n  }\n}\n",
+                "background must be a #RRGGBB color",
+            ),
+            (
+                "workspace {\n  model {\n    archimate {\n      a = businessActor A\n      b = applicationComponent B\n      a -> b {\n        type UnknownRelationship\n      }\n    }\n  }\n}\n",
+                "unknown ArchiMate relationship type",
+            ),
+            (
+                "workspace {\n  model {\n    archimate {\n      a = businessActor A\n    }\n  }\n  views {\n    archimateView v {\n      include *\n      object missing {\n        x 1\n      }\n    }\n  }\n}\n",
+                "archimateView object 'missing' is not included",
+            ),
+        ] {
+            let workspace = compile(source).unwrap();
+            assert!(validate(&workspace).unwrap_err().contains(message));
+        }
+        assert!(compile(
+            "workspace {\n  model {\n    archimate {\n      a = noSuchType A\n    }\n  }\n}\n"
+        )
+        .unwrap_err()
+        .contains("expected an ArchiMate element type"));
     }
 
     #[test]

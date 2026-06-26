@@ -392,6 +392,7 @@ fn dot_shape(kind: &ElementKind) -> &'static str {
     match kind {
         ElementKind::Person => "oval",
         ElementKind::DeploymentNode | ElementKind::InfrastructureNode => "box3d",
+        ElementKind::ArchiMate("Node" | "Device" | "SystemSoftware") => "box3d",
         _ => "box",
     }
 }
@@ -484,7 +485,7 @@ fn archimate(workspace: &Workspace) -> String {
         }
         let (source, _) = workspace.source_map.resolve(element.span);
         let tags = (!element.tags.is_empty()).then(|| element.tags.join(","));
-        let properties = [
+        let mut properties = vec![
             ("id", Some(element.id.as_str())),
             ("kind", Some(kind_name(&element.kind))),
             ("parent", element.parent.as_deref()),
@@ -493,6 +494,16 @@ fn archimate(workspace: &Workspace) -> String {
             ("description", element.description.as_deref()),
             ("source", source.path.to_str()),
         ];
+        for key in [
+            "background",
+            "color",
+            "stroke",
+            "fontSize",
+            "width",
+            "height",
+        ] {
+            properties.push((key, property_value(&element.attributes, key)));
+        }
         append_archimate_properties(&mut output, &properties, 6);
         output.push_str("    </element>\n");
     }
@@ -505,10 +516,11 @@ fn archimate(workspace: &Workspace) -> String {
             continue;
         };
         output.push_str(&format!(
-            "    <relationship identifier=\"id-relationship-{}\" source=\"{}\" target=\"{}\" xsi:type=\"Association\">\n",
+            "    <relationship identifier=\"id-relationship-{}\" source=\"{}\" target=\"{}\" xsi:type=\"{}\">\n",
             index + 1,
             archimate_element_id(source_index, &workspace.elements[source_index]),
-            archimate_element_id(destination_index, &workspace.elements[destination_index])
+            archimate_element_id(destination_index, &workspace.elements[destination_index]),
+            open_group_relationship_type(relationship)
         ));
         if let Some(description) = &relationship.description {
             output.push_str(&format!(
@@ -534,6 +546,22 @@ fn archimate(workspace: &Workspace) -> String {
                     .to_str()
                     .map(std::string::ToString::to_string),
             ),
+            (
+                "type",
+                compiler::relationship_archimate_type(relationship).map(str::to_string),
+            ),
+            (
+                "color",
+                property_value(&relationship.attributes, "color").map(str::to_string),
+            ),
+            (
+                "thickness",
+                property_value(&relationship.attributes, "thickness").map(str::to_string),
+            ),
+            (
+                "style",
+                property_value(&relationship.attributes, "style").map(str::to_string),
+            ),
         ];
         let borrowed = properties
             .iter()
@@ -543,13 +571,64 @@ fn archimate(workspace: &Workspace) -> String {
         output.push_str("    </relationship>\n");
     }
     output.push_str("  </relationships>\n  <propertyDefinitions>\n");
-    for (id, name) in DEFINITIONS {
+    let mut definitions = DEFINITIONS.to_vec();
+    for (id, name) in archimate_extra_property_definitions(workspace) {
+        definitions.push((id, name));
+    }
+    for (id, name) in definitions {
         output.push_str(&format!(
             "    <propertyDefinition identifier=\"property-{id}\" type=\"string\"><name xml:lang=\"en\">{name}</name></propertyDefinition>\n"
         ));
     }
     output.push_str("  </propertyDefinitions>\n</model>\n");
     output
+}
+
+fn archimate_extra_property_definitions(
+    workspace: &Workspace,
+) -> Vec<(&'static str, &'static str)> {
+    let mut keys = Vec::new();
+    let mut add = |key: &'static str, present: bool| {
+        if present && !keys.iter().any(|(candidate, _)| candidate == &key) {
+            keys.push((
+                key,
+                match key {
+                    "type" => "c4c.archimate.type",
+                    "background" => "c4c.archimate.background",
+                    "color" => "c4c.archimate.color",
+                    "stroke" => "c4c.archimate.stroke",
+                    "fontSize" => "c4c.archimate.fontSize",
+                    "width" => "c4c.archimate.width",
+                    "height" => "c4c.archimate.height",
+                    "thickness" => "c4c.archimate.thickness",
+                    "style" => "c4c.archimate.style",
+                    _ => "c4c.archimate",
+                },
+            ));
+        }
+    };
+    for element in &workspace.elements {
+        for key in [
+            "background",
+            "color",
+            "stroke",
+            "fontSize",
+            "width",
+            "height",
+        ] {
+            add(key, property_value(&element.attributes, key).is_some());
+        }
+    }
+    for relationship in &workspace.relationships {
+        add(
+            "type",
+            compiler::relationship_archimate_type(relationship).is_some(),
+        );
+        for key in ["color", "thickness", "style"] {
+            add(key, property_value(&relationship.attributes, key).is_some());
+        }
+    }
+    keys
 }
 
 fn append_archimate_properties(
@@ -583,6 +662,12 @@ fn archimate_element_id(index: usize, element: &Element) -> String {
     format!("id-element-{}-{}", index + 1, xml_identifier(&element.id))
 }
 
+fn open_group_relationship_type(relationship: &Relationship) -> &str {
+    compiler::relationship_archimate_type(relationship)
+        .map(|kind| kind.trim_end_matches("Relationship"))
+        .unwrap_or("Association")
+}
+
 fn archimate_type(kind: &ElementKind) -> &'static str {
     match kind {
         ElementKind::Person => "BusinessActor",
@@ -595,6 +680,7 @@ fn archimate_type(kind: &ElementKind) -> &'static str {
         | ElementKind::Component
         | ElementKind::SoftwareSystemInstance
         | ElementKind::ContainerInstance => "ApplicationComponent",
+        ElementKind::ArchiMate(kind) => kind,
     }
 }
 
@@ -660,7 +746,7 @@ fn append_archi_native_relationships(output: &mut String, workspace: &Workspace)
             &relationship.source,
             &relationship.destination,
             relationship.description.as_deref(),
-            archi_native_relationship_type(&relationship.tags),
+            archi_native_relationship_type(relationship),
         );
     }
     for view in &workspace.views {
@@ -701,24 +787,8 @@ fn append_archi_native_relationship(
     output.push_str("/>\n");
 }
 
-fn archi_native_relationship_type(tags: &[String]) -> &str {
-    const TYPES: &[&str] = &[
-        "AccessRelationship",
-        "AggregationRelationship",
-        "AssignmentRelationship",
-        "AssociationRelationship",
-        "CompositionRelationship",
-        "FlowRelationship",
-        "InfluenceRelationship",
-        "RealizationRelationship",
-        "ServingRelationship",
-        "SpecializationRelationship",
-        "TriggeringRelationship",
-    ];
-    tags.iter()
-        .filter_map(|tag| tag.strip_prefix("archimate:"))
-        .find(|native_type| TYPES.contains(native_type))
-        .unwrap_or("AssociationRelationship")
+fn archi_native_relationship_type(relationship: &Relationship) -> &str {
+    compiler::relationship_archimate_type(relationship).unwrap_or("AssociationRelationship")
 }
 
 fn append_archi_native_views(output: &mut String, workspace: &Workspace) {
@@ -770,9 +840,17 @@ fn append_archi_native_views(output: &mut String, workspace: &Workspace) {
                 .join(" ");
             let spaces = " ".repeat(indent);
             let mut xml = format!(
-                "{spaces}<child xsi:type=\"archimate:DiagramObject\" id=\"{object_id}\" archimateElement=\"{}\" type=\"1\" fillColor=\"{}\"{}>\n",
+                "{spaces}<child xsi:type=\"archimate:DiagramObject\" id=\"{object_id}\" archimateElement=\"{}\" type=\"1\" fillColor=\"{}\"{}{}{}>\n",
                 archi_native_element_id(identifier),
-                archi_native_fill(&element.kind),
+                archi_native_object_fill(workspace, view, identifier, &element.kind),
+                archi_native_view_object_property(view, identifier, "color")
+                    .or_else(|| property_value(&element.attributes, "color"))
+                    .map(|value| format!(" fontColor=\"{}\"", xml_attr(value)))
+                    .unwrap_or_default(),
+                archi_native_view_object_property(view, identifier, "stroke")
+                    .or_else(|| property_value(&element.attributes, "stroke"))
+                    .map(|value| format!(" lineColor=\"{}\"", xml_attr(value)))
+                    .unwrap_or_default(),
                 if target_connections.is_empty() {
                     String::new()
                 } else {
@@ -789,11 +867,12 @@ fn append_archi_native_views(output: &mut String, workspace: &Workspace) {
                 .filter(|(_, connection)| connection.source_element == identifier)
             {
                 xml.push_str(&format!(
-                    "{spaces}  <sourceConnection xsi:type=\"archimate:Connection\" id=\"{}\" source=\"{}\" target=\"{}\" archimateRelationship=\"{}\">\n",
+                    "{spaces}  <sourceConnection xsi:type=\"archimate:Connection\" id=\"{}\" source=\"{}\" target=\"{}\" archimateRelationship=\"{}\"{}>\n",
                     connection.id,
                     connection.source_object,
                     connection.destination_object,
-                    connection.relationship_id
+                    connection.relationship_id,
+                    archi_native_connection_style(workspace, &connection.relationship_id)
                 ));
                 if let Some([first, second]) =
                     archi_native_bendpoints(workspace, view, &layout, connection, route)
@@ -1129,9 +1208,10 @@ fn archi_native_layout(
     graph: &compiler::ViewGraph,
     connections: &[ArchiNativeConnection],
 ) -> ArchiNativeLayout {
-    let vertical = view.auto_layout.as_ref().is_some_and(|layout| {
-        matches!(layout.direction.to_ascii_lowercase().as_str(), "tb" | "bt")
-    });
+    let vertical = view.kind == ViewKind::ArchiMate
+        || view.auto_layout.as_ref().is_some_and(|layout| {
+            matches!(layout.direction.to_ascii_lowercase().as_str(), "tb" | "bt")
+        });
     let route_margin = 120 + connections.len() as isize * 30;
     let scope = (view.kind == ViewKind::Container)
         .then_some(view.scope.as_deref())
@@ -1613,6 +1693,7 @@ fn archi_native_layout(
             layout.insert(identifier.clone(), chosen);
             ungrouped_y += 140;
         }
+        apply_archi_native_manual_layout(view, &mut layout);
         return ArchiNativeLayout {
             objects: layout,
             groups: group_bounds,
@@ -1684,10 +1765,86 @@ fn archi_native_layout(
             cursor += 260;
         }
     }
+    apply_archi_native_manual_layout(view, &mut layout);
     ArchiNativeLayout {
         objects: layout,
         groups: HashMap::new(),
     }
+}
+
+fn apply_archi_native_manual_layout(view: &View, layout: &mut HashMap<String, ArchiNativeBounds>) {
+    if view.kind != ViewKind::ArchiMate {
+        return;
+    }
+    let identifiers = layout.keys().cloned().collect::<Vec<_>>();
+    for identifier in identifiers {
+        let current = layout[&identifier];
+        let x = archi_native_view_object_property(view, &identifier, "x")
+            .and_then(|value| value.parse::<isize>().ok())
+            .unwrap_or(current.x);
+        let y = archi_native_view_object_property(view, &identifier, "y")
+            .and_then(|value| value.parse::<isize>().ok())
+            .unwrap_or(current.y);
+        let width = archi_native_view_object_property(view, &identifier, "width")
+            .and_then(|value| value.parse::<isize>().ok())
+            .unwrap_or(current.width);
+        let height = archi_native_view_object_property(view, &identifier, "height")
+            .and_then(|value| value.parse::<isize>().ok())
+            .unwrap_or(current.height);
+        layout.insert(
+            identifier,
+            ArchiNativeBounds {
+                x,
+                y,
+                width,
+                height,
+            },
+        );
+    }
+}
+
+fn archi_native_view_object_property<'a>(
+    view: &'a View,
+    identifier: &str,
+    name: &str,
+) -> Option<&'a str> {
+    let key = format!("object.{identifier}.{name}");
+    property_value(&view.properties, &key)
+}
+
+fn archi_native_object_fill(
+    workspace: &Workspace,
+    view: &View,
+    identifier: &str,
+    kind: &ElementKind,
+) -> String {
+    archi_native_view_object_property(view, identifier, "background")
+        .or_else(|| {
+            find(workspace, identifier)
+                .and_then(|element| property_value(&element.attributes, "background"))
+        })
+        .unwrap_or_else(|| archi_native_fill(kind))
+        .into()
+}
+
+fn archi_native_connection_style(workspace: &Workspace, relationship_id: &str) -> String {
+    let Some(relationship) = workspace
+        .relationships
+        .iter()
+        .enumerate()
+        .find(|(index, _)| archi_native_relationship_id(*index) == relationship_id)
+        .map(|(_, relationship)| relationship)
+    else {
+        return String::new();
+    };
+    let mut output = String::new();
+    if let Some(color) = property_value(&relationship.attributes, "color") {
+        output.push_str(&format!(" lineColor=\"{}\"", xml_attr(color)));
+    }
+    if let Some(width) = property_value(&relationship.attributes, "thickness") {
+        output.push_str(&format!(" lineWidth=\"{}\"", xml_attr(width)));
+    }
+    output
 }
 
 fn archi_native_position_score(
@@ -1956,6 +2113,7 @@ fn archi_native_folder(kind: &ElementKind) -> &'static str {
         ElementKind::Generic
         | ElementKind::DeploymentEnvironment
         | ElementKind::DeploymentGroup => "other",
+        ElementKind::ArchiMate(kind) => compiler::archimate_element_folder(kind).unwrap_or("other"),
     }
 }
 
@@ -1971,6 +2129,7 @@ fn archi_native_type(kind: &ElementKind) -> &'static str {
         ElementKind::Generic
         | ElementKind::DeploymentEnvironment
         | ElementKind::DeploymentGroup => "Grouping",
+        ElementKind::ArchiMate(kind) => kind,
     }
 }
 
@@ -1981,6 +2140,14 @@ fn archi_native_fill(kind: &ElementKind) -> &'static str {
         ElementKind::Generic
         | ElementKind::DeploymentEnvironment
         | ElementKind::DeploymentGroup => "#eeeeee",
+        ElementKind::ArchiMate(kind) => match compiler::archimate_element_folder(kind) {
+            Some("business") => "#ffffb5",
+            Some("technology") => "#c9d9ff",
+            Some("motivation") => "#ccccff",
+            Some("strategy") => "#f5deaa",
+            Some("implementation_migration") => "#ffe0e0",
+            _ => "#b5ffff",
+        },
         _ => "#b5ffff",
     }
 }
@@ -2113,6 +2280,7 @@ fn json(workspace: &Workspace) -> String {
             ("deploymentViews", ViewKind::Deployment),
             ("customViews", ViewKind::Custom),
             ("imageViews", ViewKind::Image),
+            ("archimateViews", ViewKind::ArchiMate),
         ]
         .into_iter()
         .map(|(name, kind)| {
@@ -2508,6 +2676,14 @@ fn element_index(workspace: &Workspace, identifier: &str) -> Option<usize> {
         .position(|element| element.id == identifier)
 }
 
+fn property_value<'a>(properties: &'a [Property], key: &str) -> Option<&'a str> {
+    properties
+        .iter()
+        .rev()
+        .find(|property| property.key == key)
+        .map(|property| property.value.as_str())
+}
+
 fn alias(identifier: &str) -> String {
     let mut output = String::from("n_");
     for character in identifier.chars() {
@@ -2534,6 +2710,7 @@ fn kind_name(kind: &ElementKind) -> &'static str {
         ElementKind::InfrastructureNode => "InfrastructureNode",
         ElementKind::SoftwareSystemInstance => "SoftwareSystemInstance",
         ElementKind::ContainerInstance => "ContainerInstance",
+        ElementKind::ArchiMate(kind) => kind,
     }
 }
 
@@ -2548,6 +2725,7 @@ fn view_kind_name(kind: &ViewKind) -> &'static str {
         ViewKind::Deployment => "Deployment",
         ViewKind::Custom => "Custom",
         ViewKind::Image => "Image",
+        ViewKind::ArchiMate => "ArchiMate",
     }
 }
 
@@ -2817,6 +2995,50 @@ mod tests {
         assert_eq!(fnv1a(&normalized_open_group), 5_863_218_997_552_418_175);
         assert!(open_group.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<model xmlns=\"http://www.opengroup.org/xsd/archimate/3.0/\""));
         assert!(!open_group.contains("ArchimateDiagramModel"));
+        fs::remove_dir_all(output).unwrap();
+    }
+
+    #[test]
+    fn exports_m83_explicit_archimate_types_and_layout() {
+        let workspace = compile_file_with_options(
+            "tests/fixtures/m83-archimate-profile.dsl",
+            CompileOptions {
+                allow_network: false,
+                strict_safe: true,
+            },
+        )
+        .unwrap();
+        validate(&workspace).unwrap();
+        let native = archi_native(&workspace);
+        for value in [
+            "BusinessActor",
+            "ApplicationComponent",
+            "Node",
+            "FlowRelationship",
+            "AccessRelationship",
+            "ArchimateDiagramModel",
+            "DiagramObject",
+            "Connection",
+        ] {
+            assert!(native.contains(&format!("xsi:type=\"archimate:{value}\"")));
+        }
+        assert!(native.contains("fillColor=\"#008e00\""));
+        assert!(native.contains("<bounds x=\"300\" y=\"120\" width=\"180\" height=\"80\"/>"));
+        assert!(!native.contains("lineStyle="));
+        assert_archi_connection_integrity(&native);
+        let open_group = archimate(&workspace);
+        assert!(open_group.contains("xsi:type=\"ApplicationComponent\""));
+        assert!(open_group.contains("xsi:type=\"Flow\""));
+        assert!(open_group.contains("c4c.archimate.background"));
+        let output = temporary_directory("m83");
+        export(
+            &workspace,
+            "archi",
+            &output,
+            ExportOptions { strict_safe: true },
+        )
+        .unwrap();
+        assert!(output.join("workspace.archimate").is_file());
         fs::remove_dir_all(output).unwrap();
     }
 

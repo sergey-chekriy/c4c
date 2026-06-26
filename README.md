@@ -1,8 +1,8 @@
 # c4c — local Structurizr DSL compiler prototype
 
-`c4c` is a Rust prototype for a local/offline Structurizr DSL compiler.
+`c4c` is a Rust prototype for a local-first architecture DSL compiler.
 
-Goal: parse Structurizr-style C4 architecture-as-code, validate it locally, and export static artifacts without SaaS, remote rendering, accounts, or telemetry.
+Goal: parse Structurizr-compatible C4 architecture-as-code plus optional c4c ArchiMate extensions, validate it locally, and export static artifacts without SaaS, remote rendering, accounts, or telemetry.
 
 ## Current scope
 
@@ -32,6 +32,7 @@ Implemented in this repo:
 - Deterministic local static documentation sites with escaped HTML and raw Mermaid artifacts.
 - Deterministic JSON, Mermaid, D2, PlantUML, C4-PlantUML, Graphviz DOT, Draw.io, ArchiMate, and HTML exporters.
 - Archi-native `.archimate` export with editable diagram views.
+- Explicit c4c ArchiMate extension profile with ArchiMate elements, relationship types, formatting metadata, `archimateView`, and manual object layout.
 - Optional SVG/PNG generation through an explicitly requested local Graphviz renderer.
 
 
@@ -230,7 +231,7 @@ the complete element kinds and local metadata. Draw.io uses a deterministic grid
 ArchiMate export is a pragmatic exchange mapping, not full semantic equivalence: people map
 to `BusinessActor`, C4 software concepts to `ApplicationComponent`, deployment/infrastructure
 nodes to `Node`, generic/deployment grouping concepts to `Grouping`, and relationships to the
-conservative `Association` type. ArchiMate visual views are deferred.
+conservative `Association` type unless an explicit c4c ArchiMate relationship type is present.
 
 `archimate` exports Open Group ArchiMate Model Exchange XML for standards-based interchange.
 `archi` exports Archi's native, Archi-specific `.archimate` XML so Archi can open the model
@@ -259,11 +260,38 @@ cargo run -- archi diff model.archimate out/workspace.archimate
 cargo run -- archi diff model.archimate out-without-sidecar/workspace.archimate --semantic
 ```
 
+## c4c ArchiMate extensions
+
+c4c supports a Structurizr-compatible C4 core plus optional ArchiMate extensions.
+
+C4 syntax remains available:
+
+```dsl
+customer = person "Customer"
+system = softwareSystem "System"
+```
+
+ArchiMate syntax is explicit:
+
+```dsl
+archimate {
+  actor = businessActor "Operator"
+  gateway = applicationComponent "Internal API Gateway"
+  ledger = applicationComponent "External Ledger"
+
+  gateway -> ledger "Posts entries" {
+    type FlowRelationship
+  }
+}
+```
+
+This is not standard Structurizr DSL. It is a c4c extension profile intended for ArchiMate modeling and Archi round-trip workflows.
+
 `archi diff` ignores insignificant XML whitespace and attribute ordering, preserves meaningful
-child order and references, and treats `targetConnections` values as a set. The importer maps
-`BusinessActor` to `person`, `ApplicationComponent` to `softwareSystem`, `Node` to
-`deploymentNode`, and other native concepts to generic elements; exact native types remain in the
-sidecar. `archi diff --semantic` ignores generated IDs and visual formatting while comparing model
+child order and references, and treats `targetConnections` values as a set. The importer emits
+explicit c4c ArchiMate DSL keywords such as `businessActor`, `applicationComponent`, and `node`;
+exact native IDs and unknown native details remain in the sidecar. `archi diff --semantic` ignores
+generated IDs and visual formatting while comparing model
 folders, element and relationship semantics, view membership, groups, connections, and connection
 integrity. Merging arbitrary DSL edits back into the native sidecar is intentionally deferred.
 

@@ -1,6 +1,8 @@
 [
   (workspace)
   (model)
+  (archimate_block)
+  (archimate_element_declaration)
   (views)
   (element_declaration)
   (relationship)
@@ -13,6 +15,8 @@
   (deployment_view)
   (custom_view)
   (image_view)
+  (archimate_view)
+  (archimate_object)
   (styles_block)
   (element_style)
   (relationship_style)

@@ -1,5 +1,7 @@
 (element_declaration id: (identifier) @local.definition)
+(archimate_element_declaration id: (identifier) @local.definition)
 (relationship source: (identifier) @local.reference)
 (relationship destination: (identifier) @local.reference)
 (removed_relationship source: (identifier) @local.reference)
 (removed_relationship destination: (identifier) @local.reference)
+(archimate_object element: (identifier) @local.reference)
