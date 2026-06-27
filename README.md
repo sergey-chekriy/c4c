@@ -32,7 +32,7 @@ Implemented in this repo:
 - Deterministic local static documentation sites with escaped HTML and raw Mermaid artifacts.
 - Deterministic JSON, Mermaid, D2, PlantUML, C4-PlantUML, Graphviz DOT, Draw.io, ArchiMate, and HTML exporters.
 - Archi-native `.archimate` export with editable diagram views.
-- Explicit c4c ArchiMate extension profile with ArchiMate elements, relationship types, formatting metadata, `archimateView`, and manual object layout.
+- Practical ArchiMate 3.2 support through an explicit c4c ArchiMate extension profile with ArchiMate elements, relationship types, formatting metadata, `archimateView`, and manual object layout.
 - Practical ArchiMate semantic conformance with layer/role classification, relationship warnings, strict-mode errors, junctions, access direction, and viewpoint metadata.
 - Viewpoint-aware native Archi layouts with non-overlapping objects, fallback names, and safer connection routing.
 - Optional SVG/PNG generation through an explicitly requested local Graphviz renderer.
@@ -121,6 +121,13 @@ Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
 - `archi check` validates native Archi XML compatibility without fetching schemas or executing Archi.
 - Native Archi import/export rejects malformed XML, unsupported `lineStyle`, semantic `fillColor`, dangling connections, and broken visual references.
 - Sidecar and no-sidecar native export paths keep connection integrity and avoid unsupported native attributes.
+
+## Milestone 8.8 additions
+
+- ArchiMate language baseline is reported as practical ArchiMate 3.2 support via `cargo run -- archi version`.
+- Local 3.2 reference-card audit found no implementation-impacting vocabulary or relationship changes from the current registry.
+- Conformance notes live under `docs/conformance/` and distinguish practical support from Open Group certification.
+- ArchiMate 4 readiness is tracked as future roadmap work, not implemented in M8.8.
 
 ## Build
 
@@ -294,6 +301,15 @@ cargo run -- archi roundtrip model.archimate --work-dir .work/archi-roundtrip
 ## c4c ArchiMate extensions
 
 c4c supports a Structurizr-compatible C4 core plus optional ArchiMate extensions.
+
+c4c provides practical ArchiMate 3.2 support, including vocabulary, semantic validation,
+viewpoints, native Archi import/export, Open Group exchange export, and round-trip workflows.
+The implementation is not currently an Open Group certified ArchiMate tool. ArchiMate 4
+readiness and formal certification work are tracked separately.
+
+```bash
+cargo run -- archi version
+```
 
 C4 syntax remains available:
 

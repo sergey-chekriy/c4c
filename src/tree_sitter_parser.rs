@@ -169,6 +169,10 @@ mod tests {
             include_str!("../tests/fixtures/m87-opengroup-export.dsl"),
         ),
         (
+            "tests/fixtures/m88-archimate-32-full-vocabulary.dsl",
+            include_str!("../tests/fixtures/m88-archimate-32-full-vocabulary.dsl"),
+        ),
+        (
             "tests/fixtures/archi-native/m86-mini-expected.dsl",
             include_str!("../tests/fixtures/archi-native/m86-mini-expected.dsl"),
         ),

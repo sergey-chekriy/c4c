@@ -93,6 +93,32 @@ M8.7 hardens the ArchiMate profile with broader viewpoint metadata, conservative
 
 Status: implemented as practical conformance hardening. The checker is local and text-only; it does not execute Archi, fetch schemas, or claim official certification-level validation.
 
+## M8.8 — ArchiMate 3.2 alignment
+
+M8.8 aligns the implemented ArchiMate baseline with locally available ArchiMate 3.2 reference cards, adds version reporting, conformance documentation, and 3.2 vocabulary/export regression tests.
+
+Status: implemented as practical ArchiMate 3.2 support. No implementation-impacting vocabulary or relationship deltas were identified from the available 3.2 reference cards; formal certification remains out of scope.
+
+## M8.9 — ArchiMate 4 readiness and version strategy
+
+Define versioned vocabulary/export strategy before implementing ArchiMate 4 changes.
+
+## M8.10 — ArchiMate 4 implementation alignment
+
+Implement verified ArchiMate 4 deltas when local references and compatibility strategy are available.
+
+## M8.11 — Open Group Exchange Format compliance
+
+Harden standards-oriented exchange output/import against official exchange-format requirements without using network schema fetching.
+
+## M8.12 — Conformance matrix + interoperability suite
+
+Add comprehensive matrix fixtures and interoperability snapshots for supported ArchiMate/C4 workflows.
+
+## M8.13 — Certification readiness package
+
+Prepare evidence, gaps, and process docs for future certification work; no certification claim is made before this.
+
 ## M9 — compatibility suite
 
 Add fixture coverage for every language construct and compare outputs against expected snapshots.

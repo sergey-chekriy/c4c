@@ -108,6 +108,9 @@ fn run() -> Result<(), String> {
 
 fn run_archi(args: &[String]) -> Result<(), String> {
     match args {
+        [_, _, action] if action == "version" => {
+            print!("{}", compiler::archimate_version_report());
+        }
         [_, _, action, input, ..] if action == "import" => {
             let output =
                 arg_value(args, "--out").ok_or("archi import requires --out <workspace.dsl>")?;
@@ -177,7 +180,7 @@ fn arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
 
 fn usage() -> Result<(), String> {
     Err(
-        "usage: c4c <validate|inspect> <workspace.dsl> [--strict] [--strict-safe] [--allow-network]\n       c4c export <workspace.dsl> [--format json|mermaid|d2|plantuml|c4plantuml|dot|drawio|archimate|archi|archi-native|archimate-native|html|svg|png] [--out out] [--archi-sidecar file] [--strict] [--strict-safe]\n       c4c archi import <input.archimate> --out <workspace.dsl> [--sidecar file]\n       c4c archi check <input.archimate>\n       c4c archi roundtrip <input.archimate> --work-dir <dir>\n       c4c archi diff <a.archimate> <b.archimate> [--semantic]\n       c4c docs <workspace.dsl> [--out site] [--strict] [--strict-safe]\n       c4c adr list <workspace.dsl> [--strict] [--strict-safe]"
+        "usage: c4c <validate|inspect> <workspace.dsl> [--strict] [--strict-safe] [--allow-network]\n       c4c export <workspace.dsl> [--format json|mermaid|d2|plantuml|c4plantuml|dot|drawio|archimate|archi|archi-native|archimate-native|html|svg|png] [--out out] [--archi-sidecar file] [--strict] [--strict-safe]\n       c4c archi version\n       c4c archi import <input.archimate> --out <workspace.dsl> [--sidecar file]\n       c4c archi check <input.archimate>\n       c4c archi roundtrip <input.archimate> --work-dir <dir>\n       c4c archi diff <a.archimate> <b.archimate> [--semantic]\n       c4c docs <workspace.dsl> [--out site] [--strict] [--strict-safe]\n       c4c adr list <workspace.dsl> [--strict] [--strict-safe]"
             .into(),
     )
 }

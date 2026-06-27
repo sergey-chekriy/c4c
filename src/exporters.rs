@@ -3545,6 +3545,31 @@ mod tests {
     }
 
     #[test]
+    fn exports_m88_archimate_32_fixture() {
+        let workspace =
+            compile_file("tests/fixtures/m88-archimate-32-full-vocabulary.dsl").unwrap();
+        validate(&workspace).unwrap();
+        let open_group = archimate(&workspace);
+        assert!(open_group.contains("xsi:type=\"BusinessActor\""));
+        assert!(open_group.contains("xsi:type=\"ApplicationComponent\""));
+        assert!(open_group.contains("xsi:type=\"Node\""));
+        assert!(open_group.contains("xsi:type=\"Access\" accessType=\"Read\""));
+        assert!(open_group.contains("xsi:type=\"Flow\""));
+        assert!(open_group.contains("xsi:type=\"Junction\""));
+        assert!(!open_group.contains("archimate:"));
+
+        let native = archi_native(&workspace);
+        assert!(native.contains("xsi:type=\"archimate:BusinessActor\""));
+        assert!(native.contains("xsi:type=\"archimate:ApplicationComponent\""));
+        assert!(native.contains("xsi:type=\"archimate:Node\""));
+        assert!(native.contains("xsi:type=\"archimate:AccessRelationship\""));
+        assert!(!native.contains("lineStyle="));
+        assert!(crate::archi_native::compatibility_diagnostics(&native)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
     fn archi_native_layout_places_connected_objects_on_clear_short_routes() {
         let workspace = crate::compiler::compile(
             r#"workspace "Routing" {

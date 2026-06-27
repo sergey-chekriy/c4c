@@ -390,6 +390,16 @@ pub struct CompileOptions {
     pub strict: bool,
 }
 
+pub const SUPPORTED_ARCHIMATE_VERSION: &str = "3.2";
+pub const ARCHIMATE_SUPPORT_LEVEL: &str = "practical implementation";
+pub const ARCHIMATE_CERTIFICATION: &str = "not Open Group certified";
+
+pub fn archimate_version_report() -> String {
+    format!(
+        "ArchiMate language baseline: {SUPPORTED_ARCHIMATE_VERSION}\nSupport level: {ARCHIMATE_SUPPORT_LEVEL}\nCertification: {ARCHIMATE_CERTIFICATION}\nFuture roadmap: ArchiMate 4 readiness\n"
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ArchiMateElementType {
     pub keyword: &'static str,
@@ -4479,6 +4489,159 @@ mod tests {
         .unwrap_err();
         assert!(strict.contains("AssignmentRelationship source"), "{strict}");
         assert!(strict.contains("AccessRelationship from"), "{strict}");
+    }
+
+    #[test]
+    fn validates_m88_archimate_32_baseline_registry_and_version() {
+        assert_eq!(SUPPORTED_ARCHIMATE_VERSION, "3.2");
+        let report = archimate_version_report();
+        assert!(report.contains("ArchiMate language baseline: 3.2"));
+        assert!(report.contains("Certification: not Open Group certified"));
+
+        let workspace =
+            compile_file("tests/fixtures/m88-archimate-32-full-vocabulary.dsl").unwrap();
+        validate(&workspace).unwrap();
+        validate_with_options(
+            &workspace,
+            ValidationOptions {
+                strict_archimate: true,
+            },
+        )
+        .unwrap();
+        assert!(workspace
+            .properties
+            .iter()
+            .any(|property| property.key == "archimateBaseline" && property.value == "3.2"));
+
+        for keyword in [
+            "stakeholder",
+            "driver",
+            "assessment",
+            "goal",
+            "outcome",
+            "principle",
+            "requirement",
+            "constraint",
+            "meaning",
+            "value",
+            "resource",
+            "capability",
+            "valueStream",
+            "courseOfAction",
+            "businessActor",
+            "businessRole",
+            "businessCollaboration",
+            "businessInterface",
+            "businessProcess",
+            "businessFunction",
+            "businessInteraction",
+            "businessEvent",
+            "businessService",
+            "businessObject",
+            "contract",
+            "representation",
+            "product",
+            "applicationComponent",
+            "applicationCollaboration",
+            "applicationInterface",
+            "applicationFunction",
+            "applicationInteraction",
+            "applicationProcess",
+            "applicationEvent",
+            "applicationService",
+            "dataObject",
+            "node",
+            "device",
+            "systemSoftware",
+            "technologyCollaboration",
+            "technologyInterface",
+            "path",
+            "communicationNetwork",
+            "technologyFunction",
+            "technologyProcess",
+            "technologyInteraction",
+            "technologyEvent",
+            "technologyService",
+            "artifact",
+            "equipment",
+            "facility",
+            "distributionNetwork",
+            "material",
+            "workPackage",
+            "deliverable",
+            "implementationEvent",
+            "plateau",
+            "gap",
+            "grouping",
+            "location",
+            "junction",
+            "andJunction",
+            "orJunction",
+        ] {
+            let element = archimate_element_type_by_keyword(keyword)
+                .unwrap_or_else(|| panic!("missing ArchiMate 3.2 element keyword {keyword}"));
+            if element.native == "Junction" {
+                assert_eq!(archimate_element_keyword(element.native), Some("junction"));
+            } else {
+                assert_eq!(
+                    archimate_element_keyword(element.native),
+                    Some(element.keyword)
+                );
+            }
+            assert!(!element.folder.is_empty());
+            assert!(!element.layer.is_empty());
+            assert!(!element.role.is_empty());
+        }
+
+        for (keyword, native, open_group) in [
+            ("composition", "CompositionRelationship", "Composition"),
+            ("aggregation", "AggregationRelationship", "Aggregation"),
+            ("assignment", "AssignmentRelationship", "Assignment"),
+            ("realization", "RealizationRelationship", "Realization"),
+            ("serving", "ServingRelationship", "Serving"),
+            ("access", "AccessRelationship", "Access"),
+            ("influence", "InfluenceRelationship", "Influence"),
+            ("triggering", "TriggeringRelationship", "Triggering"),
+            ("flow", "FlowRelationship", "Flow"),
+            (
+                "specialization",
+                "SpecializationRelationship",
+                "Specialization",
+            ),
+            ("association", "AssociationRelationship", "Association"),
+        ] {
+            assert_eq!(archimate_relationship_type(keyword), Some(native));
+            assert_eq!(archimate_relationship_type(native), Some(native));
+            assert_eq!(
+                archimate_relationship_type(&format!("archimate:{native}")),
+                Some(native)
+            );
+            assert_eq!(
+                archimate_relationship_open_group_type(native),
+                Some(open_group)
+            );
+        }
+
+        for viewpoint in [
+            "organization",
+            "applicationCooperation",
+            "applicationUsage",
+            "applicationStructure",
+            "businessProcess",
+            "businessProduct",
+            "technology",
+            "technologyUsage",
+            "implementationAndDeployment",
+            "motivation",
+            "strategy",
+            "capabilityMap",
+            "layered",
+            "migration",
+            "project",
+            "physical",
+        ] {
+            assert!(ARCHIMATE_VIEWPOINTS.contains(&viewpoint), "{viewpoint}");
+        }
     }
 
     #[test]
