@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<archimate:model xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:archimate="http://www.archimatetool.com/archimate" name="M87 Invalid Native" id="model-invalid" version="5.0.0">
+  <folder name="Application" id="folder-application" type="application">
+    <element xsi:type="archimate:ApplicationComponent" name="Broken App" id="app-1" fillColor="#b5ffff"/>
+    <element xsi:type="archimate:DataObject" name="Data" id="app-1"/>
+  </folder>
+  <folder name="Relations" id="folder-relations" type="relations">
+    <element xsi:type="archimate:FlowRelationship" name="Broken" id="relationship-1" source="app-1" target="missing"/>
+  </folder>
+  <folder name="Views" id="folder-views" type="diagrams">
+    <element xsi:type="archimate:ArchimateDiagramModel" name="Broken" id="view-1">
+      <child xsi:type="archimate:Group" id="group-1" name="" fillColor="#eeeeee">
+        <bounds x="0" y="0" width="0" height="100"/>
+        <child xsi:type="archimate:DiagramObject" id="object-app" archimateElement="app-1" lineStyle="1">
+          <bounds x="10" y="10" width="180" height="80"/>
+          <sourceConnection xsi:type="archimate:Connection" id="connection-1" source="object-app" target="missing-object" archimateRelationship="missing-relationship" lineStyle="1"/>
+        </child>
+      </child>
+    </element>
+  </folder>
+</archimate:model>

@@ -123,6 +123,17 @@ fn run_archi(args: &[String]) -> Result<(), String> {
                 sidecar.display()
             );
         }
+        [_, _, action, input] if action == "check" => {
+            let diagnostics = archi_native::check_file(Path::new(input))?;
+            if diagnostics.is_empty() {
+                println!("OK: Archi native file passed compatibility checks");
+            } else {
+                return Err(format!(
+                    "Archi native compatibility check failed:\n{}",
+                    diagnostics.join("\n")
+                ));
+            }
+        }
         [_, _, action, a, b] if action == "diff" => {
             archi_native::diff_files(Path::new(a), Path::new(b))?;
             println!("OK: Archi native models are visually/canonically equivalent");
@@ -166,7 +177,7 @@ fn arg_value<'a>(args: &'a [String], key: &str) -> Option<&'a str> {
 
 fn usage() -> Result<(), String> {
     Err(
-        "usage: c4c <validate|inspect> <workspace.dsl> [--strict] [--strict-safe] [--allow-network]\n       c4c export <workspace.dsl> [--format json|mermaid|d2|plantuml|c4plantuml|dot|drawio|archimate|archi|archi-native|archimate-native|html|svg|png] [--out out] [--archi-sidecar file] [--strict] [--strict-safe]\n       c4c archi import <input.archimate> --out <workspace.dsl> [--sidecar file]\n       c4c archi roundtrip <input.archimate> --work-dir <dir>\n       c4c archi diff <a.archimate> <b.archimate> [--semantic]\n       c4c docs <workspace.dsl> [--out site] [--strict] [--strict-safe]\n       c4c adr list <workspace.dsl> [--strict] [--strict-safe]"
+        "usage: c4c <validate|inspect> <workspace.dsl> [--strict] [--strict-safe] [--allow-network]\n       c4c export <workspace.dsl> [--format json|mermaid|d2|plantuml|c4plantuml|dot|drawio|archimate|archi|archi-native|archimate-native|html|svg|png] [--out out] [--archi-sidecar file] [--strict] [--strict-safe]\n       c4c archi import <input.archimate> --out <workspace.dsl> [--sidecar file]\n       c4c archi check <input.archimate>\n       c4c archi roundtrip <input.archimate> --work-dir <dir>\n       c4c archi diff <a.archimate> <b.archimate> [--semantic]\n       c4c docs <workspace.dsl> [--out site] [--strict] [--strict-safe]\n       c4c adr list <workspace.dsl> [--strict] [--strict-safe]"
             .into(),
     )
 }

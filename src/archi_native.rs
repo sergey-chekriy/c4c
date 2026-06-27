@@ -146,6 +146,25 @@ pub fn parse(input: &str) -> Result<ArchiNativeModel, String> {
     model_from_xml(&parse_xml(input)?)
 }
 
+pub fn check_file(path: &Path) -> Result<Vec<String>, String> {
+    compatibility_diagnostics(&read_utf8(path)?)
+}
+
+pub fn compatibility_diagnostics(input: &str) -> Result<Vec<String>, String> {
+    let root = parse_xml(input)?;
+    let mut diagnostics = Vec::new();
+    collect_xml_compatibility_diagnostics(
+        &root,
+        &mut Vec::new(),
+        &mut HashSet::new(),
+        &mut diagnostics,
+    );
+    let model = model_from_xml(&root)?;
+    diagnostics.extend(validate_model_compatibility(&model));
+    diagnostics.extend(validate_connections(&model));
+    Ok(diagnostics)
+}
+
 pub fn import(input: &Path, output: &Path, sidecar: &Path) -> Result<(), String> {
     let (source_xml, removed_fill_colors) = sanitize_native_xml(&read_utf8(input)?)?;
     if removed_fill_colors > 0 {
@@ -164,8 +183,7 @@ pub fn import(input: &Path, output: &Path, sidecar: &Path) -> Result<(), String>
         projection_hash: hash(&dsl),
         source_xml,
     };
-    let json = serde_json::to_string_pretty(&metadata)
-        .map_err(|error| format!("cannot serialize Archi sidecar: {error}"))?;
+    let json = sidecar_json(&metadata)?;
     write(sidecar, &format!("{json}\n"))?;
     Ok(())
 }
@@ -806,6 +824,141 @@ pub fn validate_connections(model: &ArchiNativeModel) -> Vec<String> {
     diagnostics
 }
 
+fn validate_model_compatibility(model: &ArchiNativeModel) -> Vec<String> {
+    let elements = model
+        .folders
+        .iter()
+        .flat_map(|folder| &folder.elements)
+        .map(|element| (element.id.as_str(), element))
+        .collect::<HashMap<_, _>>();
+    let mut diagnostics = Vec::new();
+    for diagram in model.folders.iter().flat_map(|folder| &folder.diagrams) {
+        validate_diagram_child_compatibility(
+            &diagram.children,
+            diagram,
+            &elements,
+            &mut diagnostics,
+        );
+    }
+    diagnostics
+}
+
+fn validate_diagram_child_compatibility(
+    children: &[ArchiDiagramChild],
+    diagram: &ArchiDiagram,
+    elements: &HashMap<&str, &ArchiElement>,
+    diagnostics: &mut Vec<String>,
+) {
+    for child in children {
+        match child {
+            ArchiDiagramChild::Object(object) => {
+                if object.bounds.is_none() {
+                    diagnostics.push(format!(
+                        "diagram '{}' object '{}' has no bounds",
+                        diagram.name, object.id
+                    ));
+                }
+                match elements.get(object.element.as_str()) {
+                    Some(element) if element.name.trim().is_empty() => diagnostics.push(format!(
+                        "diagram '{}' object '{}' targets unnamed element '{}'",
+                        diagram.name, object.id, object.element
+                    )),
+                    Some(_) => {}
+                    None => diagnostics.push(format!(
+                        "diagram '{}' object '{}' targets missing element '{}'",
+                        diagram.name, object.id, object.element
+                    )),
+                }
+                validate_diagram_child_compatibility(
+                    &object.children,
+                    diagram,
+                    elements,
+                    diagnostics,
+                );
+            }
+            ArchiDiagramChild::Group(group) => {
+                if group.name.trim().is_empty() {
+                    diagnostics.push(format!(
+                        "diagram '{}' group '{}' has an empty name",
+                        diagram.name, group.id
+                    ));
+                }
+                if group.bounds.is_none() {
+                    diagnostics.push(format!(
+                        "diagram '{}' group '{}' has no bounds",
+                        diagram.name, group.id
+                    ));
+                }
+                validate_diagram_child_compatibility(
+                    &group.children,
+                    diagram,
+                    elements,
+                    diagnostics,
+                );
+            }
+        }
+    }
+}
+
+fn collect_xml_compatibility_diagnostics(
+    element: &XmlElement,
+    path: &mut Vec<String>,
+    ids: &mut HashSet<String>,
+    diagnostics: &mut Vec<String>,
+) {
+    path.push(xml_path_part(element));
+    let path_text = path.join("/");
+    if element.attributes.contains_key("lineStyle") {
+        diagnostics.push(format!(
+            "{path_text} uses unsupported native Archi attribute lineStyle"
+        ));
+    }
+    if element.attributes.contains_key("fillColor") && !is_visual_fill_color_node(element) {
+        diagnostics.push(format!(
+            "{path_text} uses unsupported fillColor outside a visual DiagramObject/Group"
+        ));
+    }
+    if element
+        .attributes
+        .get("name")
+        .is_some_and(|name| name.trim().is_empty())
+    {
+        diagnostics.push(format!("{path_text} has an empty name"));
+    }
+    if let Some(id) = element.attributes.get("id") {
+        if !ids.insert(id.clone()) {
+            diagnostics.push(format!("{path_text} duplicates id '{id}'"));
+        }
+    }
+    if element.name == "bounds" {
+        check_bound_number(element, "width", &path_text, diagnostics);
+        check_bound_number(element, "height", &path_text, diagnostics);
+    }
+    for child in &element.children {
+        collect_xml_compatibility_diagnostics(child, path, ids, diagnostics);
+    }
+    path.pop();
+}
+
+fn check_bound_number(element: &XmlElement, name: &str, path: &str, diagnostics: &mut Vec<String>) {
+    match element
+        .attributes
+        .get(name)
+        .and_then(|value| value.parse::<i64>().ok())
+    {
+        Some(value) if value > 0 => {}
+        Some(value) => diagnostics.push(format!("{path}.{name} must be positive, found {value}")),
+        None => diagnostics.push(format!("{path} is missing numeric {name}")),
+    }
+}
+
+fn xml_path_part(element: &XmlElement) -> String {
+    element.attributes.get("id").map_or_else(
+        || element.name.clone(),
+        |id| format!("{}[@id='{id}']", element.name),
+    )
+}
+
 fn parse_xml(input: &str) -> Result<XmlElement, String> {
     let mut reader = Reader::from_str(input);
     reader.config_mut().trim_text(false);
@@ -1197,16 +1350,16 @@ fn validate_child_connections(
                 if !objects.contains_key(connection.source.as_str()) {
                     diagnostics.push(format!("{prefix} has missing source {}", connection.source));
                 }
-                let Some(target) = objects.get(connection.target.as_str()) else {
-                    diagnostics.push(format!("{prefix} has missing target {}", connection.target));
-                    continue;
-                };
                 if !relationships.contains(connection.relationship.as_str()) {
                     diagnostics.push(format!(
                         "{prefix} has missing relationship {}",
                         connection.relationship
                     ));
                 }
+                let Some(target) = objects.get(connection.target.as_str()) else {
+                    diagnostics.push(format!("{prefix} has missing target {}", connection.target));
+                    continue;
+                };
                 if !target.target_connections.contains(&connection.id) {
                     diagnostics.push(format!(
                         "{prefix} is absent from targetConnections on {}",
@@ -1400,6 +1553,12 @@ fn write(path: &Path, content: &str) -> Result<(), String> {
     fs::write(path, content).map_err(|error| format!("cannot write {}: {error}", path.display()))
 }
 
+fn sidecar_json(metadata: &ArchiSidecar) -> Result<String, String> {
+    serde_json::to_string_pretty(metadata)
+        .map(|json| json.replace('<', "\\u003c"))
+        .map_err(|error| format!("cannot serialize Archi sidecar: {error}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1411,6 +1570,10 @@ mod tests {
 
     const MINI: &str = include_str!("../tests/fixtures/archi-native/m86-mini.archimate");
     const MINI_DSL: &str = include_str!("../tests/fixtures/archi-native/m86-mini-expected.dsl");
+    const M87_NATIVE: &str =
+        include_str!("../tests/fixtures/archi-native/m87-native-compat.archimate");
+    const M87_INVALID_NATIVE: &str =
+        include_str!("../tests/fixtures/archi-native/m87-invalid-native.archimate");
 
     #[test]
     fn parses_native_model_and_preserves_diagram_metadata() {
@@ -1523,6 +1686,7 @@ mod tests {
         let sidecar_json = fs::read_to_string(&sidecar).unwrap();
         assert!(sidecar_json.contains("\"format_version\": 1"));
         assert!(sidecar_json.contains("\"source_xml\""));
+        assert!(!sidecar_json.contains("<element "));
         let export_directory = directory.join("out");
         exporters::export_with_archi_sidecar(
             &workspace,
@@ -1606,6 +1770,57 @@ mod tests {
         assert!(diagnostics
             .iter()
             .any(|message| message.contains("missing target")));
+    }
+
+    #[test]
+    fn m87_checks_native_compatibility_and_generated_no_sidecar_export() {
+        assert!(compatibility_diagnostics(M87_NATIVE).unwrap().is_empty());
+        let invalid = compatibility_diagnostics(M87_INVALID_NATIVE).unwrap();
+        for expected in [
+            "lineStyle",
+            "unsupported fillColor",
+            "duplicates id",
+            "empty name",
+            "width must be positive",
+            "missing target",
+            "missing relationship",
+        ] {
+            assert!(
+                invalid.iter().any(|message| message.contains(expected)),
+                "{invalid:?}"
+            );
+        }
+
+        let directory = temporary_directory("m87-native");
+        let input = directory.join("input.archimate");
+        let projection = directory.join("workspace.dsl");
+        let sidecar = directory.join("workspace.archi-sidecar.json");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(&input, M87_NATIVE).unwrap();
+        import(&input, &projection, &sidecar).unwrap();
+        let workspace = compiler::compile_file(projection.to_str().unwrap()).unwrap();
+        compiler::validate_with_options(
+            &workspace,
+            compiler::ValidationOptions {
+                strict_archimate: true,
+            },
+        )
+        .unwrap();
+        let generated_directory = directory.join("generated");
+        exporters::export(
+            &workspace,
+            "archi",
+            &generated_directory,
+            exporters::ExportOptions { strict_safe: true },
+        )
+        .unwrap();
+        let generated =
+            fs::read_to_string(generated_directory.join("workspace.archimate")).unwrap();
+        assert!(compatibility_diagnostics(&generated).unwrap().is_empty());
+        semantic_diff_files(&input, &generated_directory.join("workspace.archimate")).unwrap();
+        assert_fill_colors_are_visual_only(&generated);
+        assert!(!generated.contains("lineStyle="));
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

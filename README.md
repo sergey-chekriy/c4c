@@ -115,6 +115,13 @@ Full Structurizr DSL support is planned incrementally; see ROADMAP.md.
 - Manual `object` bounds are preserved exactly; missing objects are auto-placed around them.
 - Connection routing keeps existing native Archi bendpoint syntax and avoids unsupported attributes.
 
+## Milestone 8.7 additions
+
+- Hardened ArchiMate vocabulary, relationship, junction, access direction, and viewpoint validation.
+- `archi check` validates native Archi XML compatibility without fetching schemas or executing Archi.
+- Native Archi import/export rejects malformed XML, unsupported `lineStyle`, semantic `fillColor`, dangling connections, and broken visual references.
+- Sidecar and no-sidecar native export paths keep connection integrity and avoid unsupported native attributes.
+
 ## Build
 
 ```bash
@@ -280,6 +287,7 @@ cargo run -- export workspace.dsl --format archi --out out \
   --archi-sidecar workspace.archi-sidecar.json
 cargo run -- archi diff model.archimate out/workspace.archimate
 cargo run -- archi diff model.archimate out-without-sidecar/workspace.archimate --semantic
+cargo run -- archi check out-without-sidecar/workspace.archimate
 cargo run -- archi roundtrip model.archimate --work-dir .work/archi-roundtrip
 ```
 
@@ -335,7 +343,11 @@ explicit c4c ArchiMate DSL keywords such as `businessActor`, `applicationCompone
 exact native IDs and unknown native details remain in the sidecar. `archi diff --semantic` ignores
 generated IDs and visual formatting while comparing model
 folders, element and relationship semantics, view membership, groups, connections, and connection
-integrity. Merging arbitrary DSL edits back into the native sidecar is intentionally deferred.
+integrity. `archi check` performs a local compatibility pass for native files: malformed XML,
+duplicate IDs, unsupported `lineStyle`, unsupported semantic `fillColor`, missing visual bounds,
+missing target elements, dangling connections, and missing `targetConnections` are reported with
+no schema download or tool execution. Merging arbitrary DSL edits back into the native sidecar is
+intentionally deferred.
 
 `svg` and `png` explicitly run the local Graphviz `dot` binary. If it is absent, c4c reports an
 installation hint and does not contact a remote service. `--strict-safe` rejects all renderer

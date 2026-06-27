@@ -1715,9 +1715,13 @@ fn validate_archimate_metadata(workspace: &Workspace, diagnostics: &mut Vec<Diag
 const ARCHIMATE_VIEWPOINTS: &[&str] = &[
     "introductory",
     "organization",
+    "businessProcess",
+    "businessProduct",
+    "applicationStructure",
     "applicationCooperation",
     "applicationUsage",
     "informationStructure",
+    "capabilityMap",
     "technology",
     "technologyUsage",
     "implementationAndDeployment",
@@ -1725,6 +1729,7 @@ const ARCHIMATE_VIEWPOINTS: &[&str] = &[
     "strategy",
     "layered",
     "physical",
+    "project",
     "migration",
     "implementationAndMigration",
 ];
@@ -1781,38 +1786,16 @@ fn validate_archimate_relationship_semantics(
     let target_layer = element_archimate_layer(&destination.kind);
     let source_role = element_archimate_role(&source.kind);
     let target_role = element_archimate_role(&destination.kind);
-    let problem = match kind {
-        "AccessRelationship" if !matches!(target_role, "passive" | "junction") => Some(format!(
-            "AccessRelationship from '{}' targets '{}', which is not passive structure",
-            source.id, destination.id
-        )),
-        "AccessRelationship" if relationship_access_direction(relationship).is_none() => Some(
-            "AccessRelationship has no access direction; default ArchiMate access is ambiguous"
-                .to_string(),
-        ),
-        "AssignmentRelationship" if !matches!(source_role, "active" | "junction") => Some(format!(
-            "AssignmentRelationship source '{}' is not active structure",
-            source.id
-        )),
-        "InfluenceRelationship"
-            if !matches!(source_layer, "motivation" | "strategy")
-                && !matches!(target_layer, "motivation" | "strategy") =>
-        {
-            Some(format!(
-                "InfluenceRelationship usually connects motivation or strategy elements, not '{}' to '{}'",
-                source.id, destination.id
-            ))
-        }
-        "FlowRelationship" | "TriggeringRelationship" | "ServingRelationship"
-            if source_layer == "motivation" || target_layer == "motivation" =>
-        {
-            Some(format!(
-                "{kind} between motivation and non-behavior elements is questionable"
-            ))
-        }
-        _ => None,
-    };
-    if let Some(message) = problem {
+    for message in archimate_relationship_problems(
+        kind,
+        relationship,
+        source,
+        destination,
+        source_layer,
+        target_layer,
+        source_role,
+        target_role,
+    ) {
         diagnostics.push(archimate_semantic_diagnostic(
             relationship.span,
             message,
@@ -1820,6 +1803,130 @@ fn validate_archimate_relationship_semantics(
             strict,
         ));
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn archimate_relationship_problems(
+    kind: &str,
+    relationship: &Relationship,
+    source: &Element,
+    destination: &Element,
+    source_layer: &str,
+    target_layer: &str,
+    source_role: &str,
+    target_role: &str,
+) -> Vec<String> {
+    let mut problems = Vec::new();
+    match kind {
+        "AccessRelationship" => {
+            if !matches!(target_role, "passive" | "junction") {
+                problems.push(format!(
+                    "AccessRelationship from '{}' targets '{}', which is not passive structure",
+                    source.id, destination.id
+                ));
+            }
+            if relationship_access_direction(relationship).is_none() {
+                problems.push(
+                    "AccessRelationship has no access direction; default ArchiMate access is ambiguous"
+                        .to_string(),
+                );
+            }
+        }
+        "AssignmentRelationship" => {
+            if !matches!(source_role, "active" | "junction") {
+                problems.push(format!(
+                    "AssignmentRelationship source '{}' is not active structure",
+                    source.id
+                ));
+            }
+            if !matches!(target_role, "behavior" | "passive" | "junction") {
+                problems.push(format!(
+                    "AssignmentRelationship target '{}' is not behavior, passive structure, or a junction",
+                    destination.id
+                ));
+            }
+        }
+        "CompositionRelationship" | "AggregationRelationship" => {
+            if source_role == "passive" {
+                problems.push(format!(
+                    "{kind} source '{}' is passive structure; a composite or active structure source is expected",
+                    source.id
+                ));
+            }
+            if matches!(source_role, "motivation" | "implementation")
+                != matches!(target_role, "motivation" | "implementation")
+                && matches!(source_layer, "motivation" | "implementation_migration")
+            {
+                problems.push(format!(
+                    "{kind} from '{}' to '{}' crosses out of the {source_layer} layer",
+                    source.id, destination.id
+                ));
+            }
+        }
+        "ServingRelationship" => {
+            if !matches!(source_role, "active" | "behavior" | "junction") {
+                problems.push(format!(
+                    "ServingRelationship source '{}' is not active structure or behavior",
+                    source.id
+                ));
+            }
+            if source_layer == "motivation" || target_layer == "motivation" {
+                problems.push(
+                    "ServingRelationship between motivation and non-behavior elements is questionable"
+                        .to_string(),
+                );
+            }
+        }
+        "TriggeringRelationship" => {
+            if source_layer == "motivation" || target_layer == "motivation" {
+                problems.push(
+                    "TriggeringRelationship between motivation and non-behavior elements is questionable"
+                        .to_string(),
+                );
+            }
+        }
+        "FlowRelationship" => {
+            if !matches!(source_role, "active" | "behavior" | "passive" | "junction")
+                || !matches!(target_role, "active" | "behavior" | "passive" | "junction")
+            {
+                problems.push(format!(
+                    "FlowRelationship from '{}' to '{}' should connect structure, behavior, or junctions",
+                    source.id, destination.id
+                ));
+            }
+            if source_layer == "motivation" || target_layer == "motivation" {
+                problems.push(
+                    "FlowRelationship between motivation and non-behavior elements is questionable"
+                        .to_string(),
+                );
+            }
+        }
+        "InfluenceRelationship"
+            if !matches!(source_layer, "motivation" | "strategy")
+                && !matches!(target_layer, "motivation" | "strategy") =>
+        {
+            problems.push(format!(
+                "InfluenceRelationship usually connects motivation or strategy elements, not '{}' to '{}'",
+                source.id, destination.id
+            ));
+        }
+        "RealizationRelationship" if source_role == "passive" => problems.push(format!(
+            "RealizationRelationship source '{}' is passive structure; behavior, active structure, or implementation elements are expected",
+            source.id
+        )),
+        "SpecializationRelationship"
+            if source_layer != target_layer
+                && source_role != "junction"
+                && target_role != "junction" =>
+        {
+            problems.push(format!(
+                "SpecializationRelationship from '{}' to '{}' crosses incompatible ArchiMate layers/roles",
+                source.id, destination.id
+            ));
+        }
+        _ => {}
+    }
+    problems
 }
 
 fn validate_archimate_viewpoint_semantics(
@@ -1839,15 +1946,17 @@ fn validate_archimate_viewpoint_semantics(
         .map(|element| element_archimate_layer(&element.kind))
         .collect::<Vec<_>>();
     let expected = match viewpoint.value.as_str() {
-        "organization" => Some("business"),
-        "applicationCooperation" | "applicationUsage" | "informationStructure" => {
-            Some("application")
-        }
+        "organization" | "businessProcess" | "businessProduct" => Some("business"),
+        "applicationStructure"
+        | "applicationCooperation"
+        | "applicationUsage"
+        | "informationStructure" => Some("application"),
+        "capabilityMap" => Some("strategy"),
         "technology" | "technologyUsage" => Some("technology"),
         "motivation" => Some("motivation"),
         "strategy" => Some("strategy"),
         "physical" => Some("physical"),
-        "implementationAndDeployment" | "implementationAndMigration" | "migration" => {
+        "project" | "implementationAndDeployment" | "implementationAndMigration" | "migration" => {
             Some("implementation_migration")
         }
         _ => None,
@@ -4299,6 +4408,77 @@ mod tests {
         )
         .unwrap_err();
         assert!(strict.contains("questionable"), "{strict}");
+    }
+
+    #[test]
+    fn validates_m87_full_vocabulary_and_strict_semantic_warnings() {
+        let workspace = compile_file("tests/fixtures/m87-archimate-full-vocabulary.dsl").unwrap();
+        validate(&workspace).unwrap();
+        validate_with_options(
+            &workspace,
+            ValidationOptions {
+                strict_archimate: true,
+            },
+        )
+        .unwrap();
+        for keyword in [
+            "stakeholder",
+            "valueStream",
+            "businessActor",
+            "applicationComponent",
+            "node",
+            "equipment",
+            "workPackage",
+            "grouping",
+            "andJunction",
+            "orJunction",
+        ] {
+            assert!(
+                archimate_element_type_by_keyword(keyword).is_some(),
+                "{keyword}"
+            );
+        }
+        for relationship in [
+            "CompositionRelationship",
+            "AggregationRelationship",
+            "AssignmentRelationship",
+            "RealizationRelationship",
+            "ServingRelationship",
+            "AccessRelationship",
+            "InfluenceRelationship",
+            "TriggeringRelationship",
+            "FlowRelationship",
+            "SpecializationRelationship",
+            "AssociationRelationship",
+        ] {
+            assert!(
+                archimate_relationship_info(relationship).is_some(),
+                "{relationship}"
+            );
+        }
+
+        let invalid = compile_file("tests/fixtures/m87-invalid-semantics.dsl").unwrap();
+        validate(&invalid).unwrap();
+        let warnings = warnings(&invalid).unwrap();
+        for expected in [
+            "AssignmentRelationship source",
+            "AccessRelationship from",
+            "FlowRelationship between motivation",
+            "RealizationRelationship source",
+            "SpecializationRelationship",
+            "archimateView viewpoint 'motivation'",
+        ] {
+            assert!(warnings.contains(expected), "{warnings}");
+        }
+        let strict = validate_with_options(
+            &invalid,
+            ValidationOptions {
+                strict_archimate: true,
+            },
+        )
+        .unwrap_err();
+        assert!(strict.contains("AssignmentRelationship source"), "{strict}");
+        assert!(strict.contains("AccessRelationship from"), "{strict}");
     }
 
     #[test]

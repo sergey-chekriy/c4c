@@ -3529,6 +3529,22 @@ mod tests {
     }
 
     #[test]
+    fn exports_m87_open_group_relationship_types() {
+        let workspace = compile_file("tests/fixtures/m87-opengroup-export.dsl").unwrap();
+        validate(&workspace).unwrap();
+        let open_group = archimate(&workspace);
+        assert!(open_group.contains("xsi:type=\"Access\" accessType=\"Read\""));
+        assert!(open_group.contains("xsi:type=\"Flow\""));
+        assert!(open_group.contains("xsi:type=\"Junction\""));
+        assert!(!open_group.contains("archimate:"));
+        assert!(!open_group.contains("lineStyle="));
+        let native = archi_native(&workspace);
+        assert!(crate::archi_native::compatibility_diagnostics(&native)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
     fn archi_native_layout_places_connected_objects_on_clear_short_routes() {
         let workspace = crate::compiler::compile(
             r#"workspace "Routing" {

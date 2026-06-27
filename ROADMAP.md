@@ -87,6 +87,12 @@ M8.6 imports native Archi `.archimate` files into explicit c4c ArchiMate DSL plu
 
 Status: implemented with safe native Archi XML parsing, extended DSL projection, lossless sidecar preservation for unchanged projections, sidecar-aware native export, canonical native diff, semantic diff, and local private-model workflow support. Full edited-projection sidecar merging remains deferred.
 
+## M8.7 — ArchiMate full conformance hardening
+
+M8.7 hardens the ArchiMate profile with broader viewpoint metadata, conservative relationship matrix warnings, stricter `--strict` behavior, native Archi compatibility checks, sidecar/no-sidecar regression coverage, and Open Group export checks.
+
+Status: implemented as practical conformance hardening. The checker is local and text-only; it does not execute Archi, fetch schemas, or claim official certification-level validation.
+
 ## M9 — compatibility suite
 
 Add fixture coverage for every language construct and compare outputs against expected snapshots.

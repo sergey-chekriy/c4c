@@ -44,6 +44,7 @@ mod tests {
             include_str!("../tests/fixtures/m8-exporters.dsl"),
             include_str!("../tests/fixtures/m83-archimate-profile.dsl"),
             include_str!("../tests/fixtures/archi-native/m86-mini-expected.dsl"),
+            include_str!("../tests/fixtures/m87-archimate-full-vocabulary.dsl"),
         ] {
             let (sources, source_id) = SourceMap::from_text("parity.dsl", source);
             let tokens = lexer::lex(sources.get(source_id)).unwrap();
